@@ -29,6 +29,10 @@ class FoundProject:
     last_modified: datetime
     reason: str
     size_bytes: int
+    has_git: bool
+    has_readme: bool
+    has_tests: bool
+
 
 
 # ✅ FAST directory size calculator
@@ -109,8 +113,15 @@ def scan_roots(roots: list[Path], max_depth: int = 4) -> list[FoundProject]:
                         last_modified=datetime.fromtimestamp(ts),
                         reason=reason,
                         size_bytes=size,
-                    )
-                )
+                        has_git=(dir_path / ".git").exists(),
+                        has_readme=any(
+                            (dir_path / name).exists()
+                            for name in ("README.md", "README", "readme.md")
+        ),
+        has_tests=(dir_path / "tests").exists() or (dir_path / "test").exists(),
+    )
+)
+
                 return
 
             for child in dir_path.iterdir():
