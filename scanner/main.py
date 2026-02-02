@@ -34,7 +34,6 @@ class FoundProject:
     has_tests: bool
 
 
-
 # ✅ FAST directory size calculator
 def dir_size_bytes(root: Path) -> int:
     skip = {".git", ".venv", "venv", "__pycache__", "node_modules"}
@@ -86,16 +85,16 @@ def is_project_dir(p: Path) -> tuple[bool, str]:
     return False, ""
 
 
-def scan_roots(roots: list[Path], max_depth: int = 4) -> list[FoundProject]:
+def scan_roots(
+    roots: list[Path], max_depth: int = 4
+) -> tuple[list[FoundProject], int, int]:
     found: list[FoundProject] = []
     dirs_scanned = 0
     dirs_skipped = 0
 
-
     def walk(dir_path: Path, depth: int) -> None:
         nonlocal dirs_scanned, dirs_skipped
         dirs_scanned += 1
-
 
         if depth > max_depth:
             return
@@ -117,11 +116,11 @@ def scan_roots(roots: list[Path], max_depth: int = 4) -> list[FoundProject]:
                         has_readme=any(
                             (dir_path / name).exists()
                             for name in ("README.md", "README", "readme.md")
-        ),
-        has_tests=(dir_path / "tests").exists() or (dir_path / "test").exists(),
-    )
-)
-
+                        ),
+                        has_tests=(dir_path / "tests").exists()
+                        or (dir_path / "test").exists(),
+                    )
+                )
                 return
 
             for child in dir_path.iterdir():
@@ -143,7 +142,6 @@ def scan_roots(roots: list[Path], max_depth: int = 4) -> list[FoundProject]:
                     dirs_skipped += 1
                     continue
 
-
         except (PermissionError, FileNotFoundError, OSError):
             dirs_skipped += 1
             return
@@ -158,11 +156,10 @@ def scan_roots(roots: list[Path], max_depth: int = 4) -> list[FoundProject]:
     return found, dirs_scanned, dirs_skipped
 
 
-
 def format_json(found: list[FoundProject], scanned: int) -> str:
     total_bytes = sum(p.size_bytes for p in found)
-    no_git_count = sum(1 for p in found if p.reason != "has .git")
-    no_git_projects = [p.path.name for p in found if p.reason != "has .git"]
+    no_git_count = sum(1 for p in found if not p.has_git)
+    no_git_projects = [p.path.name for p in found if not p.has_git]
     total_gb = total_bytes / (1024**3)
     recommended_gb = max(1, round(total_gb * 1.5))
 
@@ -171,6 +168,9 @@ def format_json(found: list[FoundProject], scanned: int) -> str:
         "project_count": len(found),
         "estimated_backup_gb_excluding_git_envs": round(total_gb, 4),
         "recommended_backup_drive_gb_minimum": recommended_gb,
+        # kept for future/reporting use (currently not output)
+        "no_git_count": no_git_count,
+        "no_git_projects": no_git_projects,
         "projects": [
             {
                 "name": p.path.name,
@@ -191,17 +191,16 @@ def format_found(found: list[FoundProject], skipped: int, limit: int = 30) -> st
         return "No projects found."
 
     total_bytes = sum(p.size_bytes for p in found)
-    no_git_count = sum(1 for p in found if p.reason != "has .git")
-    no_git_projects = [p.path.name for p in found if p.reason != "has .git"]
+    no_git_count = sum(1 for p in found if not p.has_git)
+    no_git_projects = [p.path.name for p in found if not p.has_git]
 
-    lines = []
+    lines: list[str] = []
     lines.append(f"Found {len(found)} projects ready for backup:\n")
 
     for item in found[:limit]:
         name = item.path.name
         rel = str(item.path)
         when = item.last_modified.strftime("%Y-%m-%d %H:%M")
-
         size_mb = max(1, round(item.size_bytes / (1024 * 1024)))
 
         lines.append(
@@ -214,29 +213,30 @@ def format_found(found: list[FoundProject], skipped: int, limit: int = 30) -> st
 
     total_gb = total_bytes / (1024**3)
 
+    if total_gb < 1:
+        total_mb = total_bytes / (1024**2)
+        size_str = f"{total_mb:.2f} MB" if total_mb < 1 else f"{total_mb:.1f} MB"
+    else:
+        size_str = f"{total_gb:.2f} GB"
     lines.append(
-        f"\n✅ Estimated backup size (excluding git & environments): {total_gb:.2f} GB\n"
-    )
+        f"\n✅ Estimated backup size (excluding git & environments): {size_str}\n"
+)
+
 
     recommended = max(1, round(total_gb * 1.5))
-
     lines.append(f"💡 Recommended backup drive size: {recommended} GB (minimum)\n")
+
     if skipped == 0:
         lines.append("✔  No inaccessible directories detected during scan.\n")
     else:
         lines.append(f"⚠ {skipped} directories could not be accessed during scan.\n")
 
-
-
-
-    if no_git_projects:
+    if no_git_count > 0:
         lines.append("⚠  Projects without version control:\n")
-
-    for name in no_git_projects:
-        lines.append(f"   - {name}")
+        for name in no_git_projects:
+            lines.append(f"   - {name}")
 
     lines.append("")  # blank line for spacing
-
     return "\n".join(lines)
 
 
@@ -254,7 +254,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--depth", type=int, default=4)
     p.add_argument("--limit", type=int, default=30)
     p.add_argument(
+        "--top",
+        type=int,
+        default=0,
+        help="Only include the N most recently modified projects (0 = all).",
+    )
+    p.add_argument(
         "--include", type=str, default="", help="Only show projects matching this text."
+    )
+
+    p.add_argument(
+        "--output",
+        type=str,
+        default="",
+        help="Write output to a file instead of printing to stdout.",
     )
 
     return p.parse_args()
@@ -265,20 +278,41 @@ def main() -> int:
 
     roots = [Path(r) for r in args.roots] if args.roots else [Path("~/dev")]
 
-    if not args.json:
+    # Only show the "Scanning..." banner when printing to console text output
+    if not args.output and not args.json:
         print("\nScanning for development projects...\n")
 
     found, scanned, skipped = scan_roots(roots=roots, max_depth=args.depth)
+
     if args.include:
         term = args.include.lower()
         found = [p for p in found if term in str(p.path).lower()]
 
-    if args.json:
-        print(format_json(found, scanned))
-    else:
-        print(f"Scanned {scanned} directories.\n")
-        print(format_found(found, skipped, limit=args.limit))
+    if args.top and args.top > 0:
+        found = found[: args.top]
 
+    if not found:
+        msg = "No projects found."
+        if args.output:
+            Path(args.output).expanduser().write_text(msg + "\n", encoding="utf-8")
+            print(f"Wrote report to: {args.output}")
+        else:
+            print(msg)
+        return 2
+
+    want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+
+    output_text = (
+        format_json(found, scanned)
+        if want_json
+        else f"Scanned {scanned} directories.\n\n{format_found(found, skipped, limit=args.limit)}"
+    )
+
+    if args.output:
+        Path(args.output).expanduser().write_text(output_text + "\n", encoding="utf-8")
+        print(f"Wrote report to: {args.output}")
+    else:
+        print(output_text)
 
     return 0
 

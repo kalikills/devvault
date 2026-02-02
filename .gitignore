@@ -1,13 +1,24 @@
 # Virtual environments
 .venv/
+venv/
 
 # Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Tool output / generated files
+report.json
+report.txt
 
 # OS junk
 .DS_Store
 Thumbs.db
-.venv/
-__pycache__/
-*.pyc
+
+# Editor folders
+.vscode/
+.idea/

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devvault"
+version = "0.1.0"
+description = "Scan for development projects, estimate backup size, and flag risk signals (git/readme/tests)."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Braden Turner" }]
+dependencies = []
+
+[project.scripts]
+devvault = "scanner.main:main"
+
+[tool.setuptools]
+packages = ["scanner"]
