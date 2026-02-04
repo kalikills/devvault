@@ -279,3 +279,4 @@ DevVault has successfully crossed from project → system design.
 
 - Began filesystem migration: injected FileSystemPort into scan_roots, passed fs from scan(), and migrated directory iteration to fs.iterdir() (green tests)
 - Filesystem migration: scan_roots now uses FileSystemPort for root exists/is_dir checks (tests green)
+- Filesystem migration: is_project_dir now accepts FileSystemPort and scan_roots passes fs through (tests green)

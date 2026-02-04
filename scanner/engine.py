@@ -67,9 +67,14 @@ def dir_size_bytes(root: Path) -> int:
 
     return total
 
+def is_project_dir(
+    p: Path,
+    fs: FileSystemPort | None = None,
+) -> tuple[bool, str]:
 
-def is_project_dir(p: Path) -> tuple[bool, str]:
-    if not p.is_dir():
+    fs = fs or OSFileSystem()
+
+    if not fs.is_dir(p):
         return False, ""
 
     try:
@@ -113,7 +118,7 @@ def scan_roots(
             return
 
         try:
-            ok, reason = is_project_dir(dir_path)
+            ok, reason = is_project_dir(dir_path, fs=fs)
 
             if ok:
                 ts = dir_path.stat().st_mtime
