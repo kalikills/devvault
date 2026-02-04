@@ -34,6 +34,12 @@ class FoundProject:
     has_readme: bool
     has_tests: bool
 
+@dataclass(frozen=True)
+class ScanResult:
+    projects: list[FoundProject]
+    scanned_directories: int
+    skipped_directories: int
+
 
 # ✅ FAST directory size calculator
 def dir_size_bytes(root: Path) -> int:
@@ -273,7 +279,14 @@ def run_scan(
     else:
         print(output_text)
 
-    return 0
+    result = ScanResult(
+        projects=found,
+        scanned_directories=scanned,
+        skipped_directories=skipped,
+    )
+
+    return result
+
 
 
 

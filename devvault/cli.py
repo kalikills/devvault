@@ -61,7 +61,7 @@ def main() -> int:
 
     roots = [Path(r) for r in args.roots] if args.roots else [Path("~/dev")]
 
-    return run_scan(
+    _ = run_scan(
         roots=roots,
         depth=args.depth,
         limit=args.limit,
@@ -70,3 +70,5 @@ def main() -> int:
         output=args.output,
         json_out=args.json,
     )
+    return 0
+
