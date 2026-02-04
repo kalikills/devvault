@@ -78,8 +78,9 @@ def is_project_dir(
         return False, ""
 
     try:
-        if (p / ".git").is_dir():
+        if fs.is_dir(p / ".git"):
             return True, "has .git"
+
 
         for name in (
             "pyproject.toml",
