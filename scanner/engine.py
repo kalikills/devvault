@@ -162,8 +162,9 @@ def scan_roots(
     for r in roots:
         r = r.expanduser()
 
-        if r.exists() and r.is_dir():
+        if fs.exists(r) and fs.is_dir(r):
             walk(r, 0)
+
 
     found.sort(key=lambda x: x.last_modified, reverse=True)
     return found, dirs_scanned, dirs_skipped
