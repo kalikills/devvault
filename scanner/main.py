@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
@@ -158,8 +159,6 @@ def scan_roots(
 
 def format_json(found: list[FoundProject], scanned: int) -> str:
     total_bytes = sum(p.size_bytes for p in found)
-    no_git_count = sum(1 for p in found if not p.has_git)
-    no_git_projects = [p.path.name for p in found if not p.has_git]
     total_gb = total_bytes / (1024**3)
     recommended_gb = max(1, round(total_gb * 1.5))
 
@@ -168,9 +167,6 @@ def format_json(found: list[FoundProject], scanned: int) -> str:
         "project_count": len(found),
         "estimated_backup_gb_excluding_git_envs": round(total_gb, 4),
         "recommended_backup_drive_gb_minimum": recommended_gb,
-        # kept for future/reporting use (currently not output)
-        "no_git_count": no_git_count,
-        "no_git_projects": no_git_projects,
         "projects": [
             {
                 "name": p.path.name,
@@ -191,8 +187,6 @@ def format_found(found: list[FoundProject], skipped: int, limit: int = 30) -> st
         return "No projects found."
 
     total_bytes = sum(p.size_bytes for p in found)
-    no_git_count = sum(1 for p in found if not p.has_git)
-    no_git_projects = [p.path.name for p in found if not p.has_git]
 
     lines: list[str] = []
     lines.append(f"Found {len(found)} projects ready for backup:\n")
@@ -212,73 +206,77 @@ def format_found(found: list[FoundProject], skipped: int, limit: int = 30) -> st
         )
 
     total_gb = total_bytes / (1024**3)
+    size_str = f"{total_gb:.2f} GB" if total_gb >= 1 else f"{total_bytes / (1024**2):.1f} MB"
 
-    if total_gb < 1:
-        total_mb = total_bytes / (1024**2)
-        size_str = f"{total_mb:.2f} MB" if total_mb < 1 else f"{total_mb:.1f} MB"
-    else:
-        size_str = f"{total_gb:.2f} GB"
-    lines.append(
-        f"\n✅ Estimated backup size (excluding git & environments): {size_str}\n"
-)
+    lines.append(f"\n✅ Estimated backup size (excluding git & environments): {size_str}\n")
+    lines.append(f"💡 Recommended backup drive size: {max(1, round(total_gb * 1.5))} GB (minimum)\n")
 
-
-    recommended = max(1, round(total_gb * 1.5))
-    lines.append(f"💡 Recommended backup drive size: {recommended} GB (minimum)\n")
-
-    if skipped == 0:
-        lines.append("✔  No inaccessible directories detected during scan.\n")
-    else:
+    if skipped:
         lines.append(f"⚠ {skipped} directories could not be accessed during scan.\n")
+    else:
+        lines.append("✔  No inaccessible directories detected during scan.\n")
 
-    if no_git_count > 0:
-        lines.append("⚠  Projects without version control:\n")
-        for name in no_git_projects:
-            lines.append(f"   - {name}")
-
-    lines.append("")  # blank line for spacing
     return "\n".join(lines)
 
 
+# ⭐ PROFESSIONAL SUBCOMMAND PARSER
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        prog="devvault", description="Scan for development projects."
+    parser = argparse.ArgumentParser(
+        prog="devvault",
+        description="DevVault — Professional project backup and risk detection CLI.",
     )
 
-    p.add_argument(
-        "roots",
-        nargs="*",
-        help="Directories to scan (default: ~/dev).",
-    )
-    p.add_argument("--json", action="store_true", help="Output results as JSON.")
-    p.add_argument("--depth", type=int, default=4)
-    p.add_argument("--limit", type=int, default=30)
-    p.add_argument(
+    # Back-compat: support old style `devvault [roots...] --top 1` by keeping
+    # scan args on the top-level parser as well.
+    parser.add_argument("roots", nargs="*", help="Directories to scan (default: ~/dev).")
+    parser.add_argument("--json", action="store_true", help="Output results as JSON.")
+    parser.add_argument("--depth", type=int, default=4)
+    parser.add_argument("--limit", type=int, default=30)
+    parser.add_argument(
         "--top",
         type=int,
         default=0,
         help="Only include the N most recently modified projects (0 = all).",
     )
-    p.add_argument(
+    parser.add_argument(
         "--include", type=str, default="", help="Only show projects matching this text."
     )
-
-    p.add_argument(
+    parser.add_argument(
         "--output",
         type=str,
         default="",
         help="Write output to a file instead of printing to stdout.",
     )
 
-    return p.parse_args()
+    sub = parser.add_subparsers(dest="command")
+
+    # New style: `devvault scan ...`
+    scan = sub.add_parser("scan", help="Scan for development projects.")
+    scan.add_argument("roots", nargs="*", help=argparse.SUPPRESS)
+    scan.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+    scan.add_argument("--depth", type=int, default=4, help=argparse.SUPPRESS)
+    scan.add_argument("--limit", type=int, default=30, help=argparse.SUPPRESS)
+    scan.add_argument("--top", type=int, default=0, help=argparse.SUPPRESS)
+    scan.add_argument("--include", type=str, default="", help=argparse.SUPPRESS)
+    scan.add_argument("--output", type=str, default="", help=argparse.SUPPRESS)
+
+    args = parser.parse_args()
+
+    # Default to scan if no command provided.
+    if args.command is None:
+        args.command = "scan"
+
+    return args
 
 
 def main() -> int:
     args = parse_args()
 
+    if args.command != "scan":
+        return 2
+
     roots = [Path(r) for r in args.roots] if args.roots else [Path("~/dev")]
 
-    # Only show the "Scanning..." banner when printing to console text output
     if not args.output and not args.json:
         print("\nScanning for development projects...\n")
 
@@ -292,12 +290,7 @@ def main() -> int:
         found = found[: args.top]
 
     if not found:
-        msg = "No projects found."
-        if args.output:
-            Path(args.output).expanduser().write_text(msg + "\n", encoding="utf-8")
-            print(f"Wrote report to: {args.output}")
-        else:
-            print(msg)
+        print("No projects found.")
         return 2
 
     want_json = args.json or (args.output and args.output.lower().endswith(".json"))
