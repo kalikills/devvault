@@ -12,7 +12,8 @@ authors = [{ name = "Braden Turner" }]
 dependencies = []
 
 [project.scripts]
-devvault = "scanner.main:main"
+devvault = "devvault.__main__:main"
 
 [tool.setuptools]
-packages = ["scanner"]
+packages = ["devvault", "scanner"]
+
