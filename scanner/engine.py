@@ -5,6 +5,8 @@ from pathlib import Path
 from datetime import datetime
 
 from scanner.models import ScanRequest
+from scanner.adapters.filesystem import OSFileSystem
+from scanner.ports.filesystem import FileSystemPort
 
 SKIP_DIR_NAMES = {
     ".git",
@@ -91,11 +93,17 @@ def is_project_dir(p: Path) -> tuple[bool, str]:
 
 
 def scan_roots(
-    roots: list[Path], max_depth: int = 4
+    roots: list[Path],
+    max_depth: int = 4,
+    fs: FileSystemPort | None = None,
 ) -> tuple[list[FoundProject], int, int]:
+
+    fs = fs or OSFileSystem()
+
     found: list[FoundProject] = []
     dirs_scanned = 0
     dirs_skipped = 0
+
 
     def walk(dir_path: Path, depth: int) -> None:
         nonlocal dirs_scanned, dirs_skipped
@@ -128,7 +136,7 @@ def scan_roots(
                 )
                 return
 
-            for child in dir_path.iterdir():
+            for child in fs.iterdir(dir_path):
                 try:
                     if not child.is_dir():
                         continue
@@ -161,8 +169,14 @@ def scan_roots(
     return found, dirs_scanned, dirs_skipped
 
 
-def scan(req: ScanRequest) -> ScanResult:
-    found, scanned, skipped = scan_roots(roots=req.roots, max_depth=req.depth)
+def scan(req: ScanRequest, fs: FileSystemPort | None = None) -> ScanResult:
+    fs = fs or OSFileSystem()
+    found, scanned, skipped = scan_roots(
+    roots=req.roots,
+    max_depth=req.depth,
+    fs=fs,
+)
+
 
     if req.include:
         term = req.include.lower()

@@ -276,3 +276,5 @@ Unlocks:
 ## Status
 
 DevVault has successfully crossed from project → system design.
+
+- Began filesystem migration: injected FileSystemPort into scan_roots, passed fs from scan(), and migrated directory iteration to fs.iterdir() (green tests)
