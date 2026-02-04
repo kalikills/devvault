@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import json
-import argparse
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
-
 
 SKIP_DIR_NAMES = {
     ".git",
@@ -242,9 +239,10 @@ def run_scan(
     include: str = "",
     output: str = "",
     json_out: bool = False,
-) -> int:
+    quiet: bool = False,
+) -> ScanResult:
     # Only show the "Scanning..." banner when printing to console text output
-    if not output and not json_out:
+    if not quiet and not output and not json_out:
         print("\nScanning for development projects...\n")
 
     found, scanned, skipped = scan_roots(roots=roots, max_depth=depth)
@@ -262,8 +260,9 @@ def run_scan(
             Path(output).expanduser().write_text(msg + "\n", encoding="utf-8")
             print(f"Wrote report to: {output}")
         else:
-            print(msg)
-        return 2
+            if not quiet:
+                print(msg)
+        return ScanResult(projects=[], scanned_directories=scanned, skipped_directories=skipped)
 
     want_json = json_out or (output and output.lower().endswith(".json"))
 
@@ -277,16 +276,14 @@ def run_scan(
         Path(output).expanduser().write_text(output_text + "\n", encoding="utf-8")
         print(f"Wrote report to: {output}")
     else:
-        print(output_text)
+        if not quiet:
+            print(output_text)
 
-    result = ScanResult(
+    return ScanResult(
         projects=found,
         scanned_directories=scanned,
         skipped_directories=skipped,
     )
-
-    return result
-
 
 
 
