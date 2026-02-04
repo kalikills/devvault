@@ -1,32 +1,32 @@
-# DevVault Build Log
+# DevVault — BUILD LOG
 
 ## Project Vision
-DevVault is a professional-grade Python CLI tool designed to help developers identify, protect, and back up their development projects with safety-first architecture.
+DevVault is a professional-grade Python CLI designed to help developers identify, protect, and back up development projects with safety-first architecture.
 
-Primary design philosophy:
+### Core Philosophy
+- Safety over speed  
+- Predictability over cleverness  
+- Atomic operations  
+- Calm, trust-building UX  
+- Failure-aware design  
+- Minimal cognitive load  
 
-- Safety over speed
-- Predictability over cleverness
-- Atomic operations
-- Calm, trust-building UX
-- Failure-aware design
-- Minimal cognitive load for the user
+DevVault is engineered to behave like a reliability system, not a script.
 
 ---
 
-# Phase 1 — Foundation
+# Phase 1 — Foundation ✅ COMPLETE
 
 ## Repository Initialization
-- Created structured Python project
+- Structured Python project layout
 - Added `.gitignore`
-- Configured virtual environment strategy (.venv per project)
-- Established clean repo practices
+- Adopted per-project virtual environments (`.venv`)
+- Established clean repository practices
 
 ---
 
-## Scanner Engine ✅ COMPLETE
-
-Built a recursive project scanner capable of detecting development environments based on:
+## Scanner Engine
+Recursive project scanner capable of detecting development environments via:
 
 - `.git`
 - `pyproject.toml`
@@ -35,266 +35,244 @@ Built a recursive project scanner capable of detecting development environments 
 - `Cargo.toml`
 - `go.mod`
 
-### Features:
-- Depth-limited scanning
-- Directory skip logic
-- Permission-safe traversal
-- Project metadata collection:
+### Capabilities
+- Depth-limited traversal  
+- Directory skip logic  
+- Permission-safe scanning  
+- Metadata collection:
   - last modified
-  - size
+  - project size
   - git presence
-  - readme detection
+  - README detection
   - test detection
 
 ---
 
-## Reporting System ✅ COMPLETE
-
-Implemented:
-
+## Reporting System
 ### CLI Output
-- Clean formatted terminal report
-- Backup size estimation
-- Recommended drive sizing
-- Risk warnings for projects without version control
+- Structured terminal report  
+- Backup size estimation  
+- Recommended drive sizing  
+- Risk warnings  
 
 ### JSON Output
-Supports automation and future integrations.
+Enables automation and future integrations.
 
 ---
 
-## Risk Detection ✅ COMPLETE
-
+## Risk Detection
 Flags:
+- Projects without git  
+- Missing documentation  
+- Missing tests  
 
-- Projects without git
-- Missing documentation
-- Missing tests
-
-Designed to surface silent operational risks.
+Designed to surface silent operational risks early.
 
 ---
 
-## CLI Packaging ✅ COMPLETE
+## CLI Packaging
+Installed via:
 
-- Installed via `pip install -e .`
-- Exposed command:
+pip install -e .
+
+Exposes command:
 
 devvault
 
-
 Supports:
-
-- scanning roots
+- root scanning
 - JSON output
 - filtering
-- output to file
+- file output
 
 ---
 
-# Phase 2 — Safety Infrastructure
+# Phase 2 — Architecture & Safety Infrastructure (ACTIVE)
 
 ## Snapshot Engine ✅ COMPLETE
-
-**Major architectural milestone.**
+Major reliability milestone.
 
 Implemented timestamped snapshot directories:
 
 DevVault/
-snapshots/
-YYYY-MM-DD_HH-MM-SS/
+  snapshots/
+    YYYY-MM-DD_HH-MM-SS/
 
+### Atomic Snapshot Pattern
+Snapshots are never trusted until finalized.
 
-Prevents overwrite and establishes recoverable history.
-
----
-
-## Atomic Commit Pattern ✅ COMPLETE
-
-Snapshots are NEVER trusted until finalized.
-
-### Write Phase:
+Write Phase:
 .incomplete-YYYY-MM-DD_HH-MM-SS
 
-
-### Commit Phase:
-Renamed to:
-
+Commit Phase:
 YYYY-MM-DD_HH-MM-SS
 
-
-### Why this matters:
-Prevents false backups if interruption occurs.
-
-This pattern mirrors behavior used in:
-
-- databases
-- storage engines
-- package managers
-- professional backup software
+Prevents false backups during interruption.
 
 ---
 
-## Functions Implemented
+## Core Snapshot Functions
+- create_snapshot_root()
+- commit_snapshot()
 
-### `create_snapshot_root()`
-Creates the incomplete snapshot safely.
-
-### `commit_snapshot()`
-Atomically renames snapshot once backup is verified.
-
-Includes defensive validation to prevent misuse.
+Includes defensive validation.
 
 ---
 
-# Architecture Principles Established
+# Architectural Principles Established
 
 ## Guardrails Over Freedom
-Unsafe backup locations will be blocked.
+Unsafe backup locations are blocked.
 
-False safety is considered worse than tool failure.
+False safety is worse than tool failure.
 
 ---
 
 ## Calm Failure UX
 Errors must:
-- lead softly
-- explain clearly
-- reassure the user
-- provide recovery steps
+- lead softly  
+- explain clearly  
+- reassure  
+- provide recovery steps  
 
-DevVault should feel like a professional safety system — never chaotic.
+DevVault should feel stable — never chaotic.
 
 ---
 
 ## Predictive Safety
-Backups will estimate required space BEFORE execution.
+Backups estimate required disk space BEFORE execution.
 
 Users should never be surprised by disk failures.
 
 ---
 
 ## Quiet Guardian Behavior
-DevVault will surface important safety signals without becoming noisy or intrusive.
+Surface critical safety signals without becoming noisy.
 
 ---
 
 ## Verification Philosophy
-Backups must be verified — not assumed successful.
+Backups must be verified — not assumed.
 
-Initial approach:
-- file existence
-- size matching
+Initial strategy:
+- file existence  
+- size matching  
 
-Future upgrade path:
-- checksum validation
-
----
-
-## Active File Detection (Planned)
-Warn users when backing up files that are actively changing.
-
-Warn — not block.
+Future path:
+- checksum validation  
 
 ---
 
-## Safe Interrupt Handling (Planned)
-If backup is interrupted:
-
-- clean incomplete snapshot
-- preserve prior backups
-- maintain atomic safety
-
----
-
-# Developer Workflow Decisions
+# Developer Workflow Standards
 
 ## One Virtual Environment Per Project
 Prevents dependency conflicts.
 
-Disk is cheap.
+Disk is cheap.  
 Broken environments are expensive.
 
 ---
 
 ## Standardized Backup Root
-External drives will always use:
+External drives always use:
 
 DevVault/
 
-
-No custom naming.
-
-Optimizes disaster recovery clarity.
+No custom naming — improves disaster recovery clarity.
 
 ---
 
-# Major Builder Milestones Reached
+# Major Builder Milestones
 
 ✅ First real filesystem modification  
 ✅ Cross-WSL → Windows path success  
-✅ Infrastructure-level safety pattern implemented  
+✅ Infrastructure-level safety patterns implemented  
 ✅ Transition from scripting → system design  
+
+DevVault is no longer a prototype.
+
+---
+
+# Architecture Checkpoint — 2026-02-03
+Phase 1 Architecture Finalized
+
+- Separated CLI from engine
+- Introduced typed ScanResult
+- Engine returns structured data
+- Added quiet mode
+- Enforced JSON CLI contract
+- Removed argparse from engine
+- Stabilized repository
+
+Engineering Rules:
+- Switch chats only at safe architectural checkpoints  
+- ALWAYS update BUILD_LOG before ending a session  
+
+---
+
+# Architecture Checkpoint — 2026-02-04
+Phase 2 Boundary Enforcement
+
+Engine:
+- Introduced typed ScanRequest
+- Added pure scan(req)
+- Removed run_scan
+- Eliminated formatting from engine
+
+CLI:
+- Moved formatting to devvault/formatters.py
+- CLI owns stdout + file output
+
+Structural Fixes:
+- Resolved scanner.models collision
+- Removed accidental scaffolding
+
+---
+
+## Testing Infrastructure Added
+- Unit tests for scan() using TemporaryDirectory
+- Established refactor safety net
+
+---
+
+## Dependency Injection Initiated
+- Introduced FileSystemPort
+- Added OSFileSystem adapter
+- Began filesystem injection into engine
+
+This marks DevVault’s transition toward clean architecture.
 
 ---
 
 # Current Project State
 
-DevVault is no longer a prototype.
+DevVault now has:
 
-It now possesses the skeleton of a professional reliability tool.
+✅ layered architecture  
+✅ typed engine contracts  
+✅ pure domain logic  
+✅ CLI isolation  
+✅ unit tests  
+✅ atomic reliability patterns  
 
-Next phase will focus on:
+---
 
-👉 Backup execution engine.
+# Next Architectural Target
 
-# BUILD_LOG Entry 2/3/26 — Phase 1 Architecture Complete
+👉 Filesystem Port Migration
 
-Session Outcome: Phase 1 architecture finalized.
+Refactor engine internals to operate entirely through injected filesystem interfaces.
 
-Major Achievements:
+Unlocks:
 
-Separated CLI from engine (professional layering)
+- deterministic tests  
+- mock filesystems  
+- parallel scanning  
+- remote adapters  
+- cloud backup support  
 
-Introduced ScanResult typed engine contract
+---
 
-Engine now returns structured data instead of controlling execution
+## Status
 
-Added quiet mode for non-interactive runs
-
-Enforced JSON CLI output contract
-
-Removed argparse from engine
-
-Established presenters extraction as next architectural step
-
-Repository cleaned and stabilized
-
-Engineering Rules Added:
-
-Switch chats only at safe architectural checkpoints
-
-ALWAYS update BUILD_LOG before ending a session
-
-Status:
-DevVault is now structured like a professional CLI tool and ready for Phase 2 development.
-
-Next Session Focus:
-Presenter extraction → engine purity → testability.
-
-# 2/4/26 
-Phase 2 architecture:
-
-Added typed ScanRequest and pure scan(req) engine entrypoint
-
-Moved JSON/text formatting + output writing to devvault/formatters.py
-
-CLI now owns banner + JSON-only stdout contract + --output behavior
-
-Removed run_scan and all formatting concerns from scanner/engine.py
-
-Resolved scanner.models collision by using scanner/models/_init__.py
-
-- Added unit tests for pure engine scan() using TemporaryDirectory
-- Established test safety net for future refactors
-- Removed accidental scanner/core scaffolding to maintain architectural clarity
+DevVault has successfully crossed from project → system design.
