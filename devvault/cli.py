@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from scanner.engine import run_scan, format_json
+from scanner.engine import scan
+from scanner.models import ScanRequest
+from devvault.formatters import format_json, format_found, write_output
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,21 +74,38 @@ def main() -> int:
 
     # 🚨 Critical contract:
     # JSON must be silent except for JSON.
-    quiet_mode = args.json
 
-    result = run_scan(
+    req = ScanRequest(
         roots=roots,
         depth=args.depth,
         limit=args.limit,
         top=args.top,
         include=args.include,
-        output=args.output,
-        json_out=args.json,
-        quiet=quiet_mode,
     )
 
-    if args.json and not args.output:
-        print(format_json(result.projects, result.scanned_directories))
+    # Phase 2: engine is pure; CLI handles printing/output
+    result = scan(req)
 
+    # Output handling lives in CLI (Phase 2)
+    want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+
+    if want_json:
+        out = format_json(result.projects, result.scanned_directories)
+    else:
+        # Banner only for human console output (not JSON, not file output)
+        if not args.output:
+            print("\nScanning for development projects...\n")
+
+        if not result.projects:
+            out = "No projects found."
+        else:
+            out = f"Scanned {result.scanned_directories} directories.\n\n{format_found(result.projects, result.skipped_directories, limit=args.limit)}"
+
+    if args.output:
+        write_output(args.output, out)
+        print(f"Wrote report to: {args.output}")
+    else:
+        # JSON contract: JSON must be silent except for JSON
+        print(out)
 
     return 0

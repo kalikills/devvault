@@ -281,3 +281,17 @@ DevVault is now structured like a professional CLI tool and ready for Phase 2 de
 
 Next Session Focus:
 Presenter extraction → engine purity → testability.
+
+# 2/4/26 
+Phase 2 architecture:
+
+Added typed ScanRequest and pure scan(req) engine entrypoint
+
+Moved JSON/text formatting + output writing to devvault/formatters.py
+
+CLI now owns banner + JSON-only stdout contract + --output behavior
+
+Removed run_scan and all formatting concerns from scanner/engine.py
+
+Resolved scanner.models collision by using scanner/models/_init__.py
+

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
+
+from scanner.models import ScanRequest
 
 SKIP_DIR_NAMES = {
     ".git",
@@ -160,130 +161,18 @@ def scan_roots(
     return found, dirs_scanned, dirs_skipped
 
 
-def format_json(found: list[FoundProject], scanned: int) -> str:
-    total_bytes = sum(p.size_bytes for p in found)
-    total_gb = total_bytes / (1024**3)
-    recommended_gb = max(1, round(total_gb * 1.5))
+def scan(req: ScanRequest) -> ScanResult:
+    found, scanned, skipped = scan_roots(roots=req.roots, max_depth=req.depth)
 
-    data = {
-        "scanned_directories": scanned,
-        "project_count": len(found),
-        "estimated_backup_gb_excluding_git_envs": round(total_gb, 4),
-        "recommended_backup_drive_gb_minimum": recommended_gb,
-        "projects": [
-            {
-                "name": p.path.name,
-                "path": str(p.path),
-                "last_modified": p.last_modified.isoformat(timespec="minutes"),
-                "reason": p.reason,
-                "size_mb": max(1, round(p.size_bytes / (1024**2))),
-            }
-            for p in found
-        ],
-    }
-
-    return json.dumps(data, indent=2)
-
-
-def format_found(found: list[FoundProject], skipped: int, limit: int = 30) -> str:
-    if not found:
-        return "No projects found."
-
-    total_bytes = sum(p.size_bytes for p in found)
-
-    lines: list[str] = []
-    lines.append(f"Found {len(found)} projects ready for backup:\n")
-
-    for item in found[:limit]:
-        name = item.path.name
-        rel = str(item.path)
-        when = item.last_modified.strftime("%Y-%m-%d %H:%M")
-        size_mb = max(1, round(item.size_bytes / (1024 * 1024)))
-
-        lines.append(
-            f"- {name}\n"
-            f"  last modified: {when}\n"
-            f"  path: {rel}\n"
-            f"  reason: {item.reason}\n"
-            f"  size: {size_mb} MB"
-        )
-
-    total_gb = total_bytes / (1024**3)
-    size_str = (
-        f"{total_gb:.2f} GB" if total_gb >= 1 else f"{total_bytes / (1024**2):.1f} MB"
-    )
-
-    lines.append(
-        f"\n✅ Estimated backup size (excluding git & environments): {size_str}\n"
-    )
-    lines.append(
-        f"💡 Recommended backup drive size: {max(1, round(total_gb * 1.5))} GB (minimum)\n"
-    )
-
-    if skipped:
-        lines.append(f"⚠ {skipped} directories could not be accessed during scan.\n")
-    else:
-        lines.append("✔  No inaccessible directories detected during scan.\n")
-
-    return "\n".join(lines)
-
-
-
-
-def run_scan(
-    roots: list[Path],
-    *,
-    depth: int = 4,
-    limit: int = 30,
-    top: int = 0,
-    include: str = "",
-    output: str = "",
-    json_out: bool = False,
-    quiet: bool = False,
-) -> ScanResult:
-    # Only show the "Scanning..." banner when printing to console text output
-    if not quiet and not output and not json_out:
-        print("\nScanning for development projects...\n")
-
-    found, scanned, skipped = scan_roots(roots=roots, max_depth=depth)
-
-    if include:
-        term = include.lower()
+    if req.include:
+        term = req.include.lower()
         found = [p for p in found if term in str(p.path).lower()]
 
-    if top and top > 0:
-        found = found[:top]
-
-    if not found:
-        msg = "No projects found."
-        if output:
-            Path(output).expanduser().write_text(msg + "\n", encoding="utf-8")
-            print(f"Wrote report to: {output}")
-        else:
-            if not quiet:
-                print(msg)
-        return ScanResult(projects=[], scanned_directories=scanned, skipped_directories=skipped)
-
-    want_json = json_out or (output and output.lower().endswith(".json"))
-
-    output_text = (
-        format_json(found, scanned)
-        if want_json
-        else f"Scanned {scanned} directories.\n\n{format_found(found, skipped, limit=limit)}"
-    )
-
-    if output:
-        Path(output).expanduser().write_text(output_text + "\n", encoding="utf-8")
-        print(f"Wrote report to: {output}")
-    else:
-        if not quiet:
-            print(output_text)
+    if req.top and req.top > 0:
+        found = found[: req.top]
 
     return ScanResult(
         projects=found,
         scanned_directories=scanned,
         skipped_directories=skipped,
     )
-
-
-
