@@ -295,3 +295,6 @@ Removed run_scan and all formatting concerns from scanner/engine.py
 
 Resolved scanner.models collision by using scanner/models/_init__.py
 
+- Added unit tests for pure engine scan() using TemporaryDirectory
+- Established test safety net for future refactors
+- Removed accidental scanner/core scaffolding to maintain architectural clarity
