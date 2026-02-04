@@ -206,10 +206,16 @@ def format_found(found: list[FoundProject], skipped: int, limit: int = 30) -> st
         )
 
     total_gb = total_bytes / (1024**3)
-    size_str = f"{total_gb:.2f} GB" if total_gb >= 1 else f"{total_bytes / (1024**2):.1f} MB"
+    size_str = (
+        f"{total_gb:.2f} GB" if total_gb >= 1 else f"{total_bytes / (1024**2):.1f} MB"
+    )
 
-    lines.append(f"\n✅ Estimated backup size (excluding git & environments): {size_str}\n")
-    lines.append(f"💡 Recommended backup drive size: {max(1, round(total_gb * 1.5))} GB (minimum)\n")
+    lines.append(
+        f"\n✅ Estimated backup size (excluding git & environments): {size_str}\n"
+    )
+    lines.append(
+        f"💡 Recommended backup drive size: {max(1, round(total_gb * 1.5))} GB (minimum)\n"
+    )
 
     if skipped:
         lines.append(f"⚠ {skipped} directories could not be accessed during scan.\n")
@@ -228,7 +234,9 @@ def parse_args() -> argparse.Namespace:
 
     # Back-compat: support old style `devvault [roots...] --top 1` by keeping
     # scan args on the top-level parser as well.
-    parser.add_argument("roots", nargs="*", help="Directories to scan (default: ~/dev).")
+    parser.add_argument(
+        "roots", nargs="*", help="Directories to scan (default: ~/dev)."
+    )
     parser.add_argument("--json", action="store_true", help="Output results as JSON.")
     parser.add_argument("--depth", type=int, default=4)
     parser.add_argument("--limit", type=int, default=30)
@@ -267,6 +275,55 @@ def parse_args() -> argparse.Namespace:
         args.command = "scan"
 
     return args
+
+
+def run_scan(
+    roots: list[Path],
+    *,
+    depth: int = 4,
+    limit: int = 30,
+    top: int = 0,
+    include: str = "",
+    output: str = "",
+    json_out: bool = False,
+) -> int:
+    # Only show the "Scanning..." banner when printing to console text output
+    if not output and not json_out:
+        print("\nScanning for development projects...\n")
+
+    found, scanned, skipped = scan_roots(roots=roots, max_depth=depth)
+
+    if include:
+        term = include.lower()
+        found = [p for p in found if term in str(p.path).lower()]
+
+    if top and top > 0:
+        found = found[:top]
+
+    if not found:
+        msg = "No projects found."
+        if output:
+            Path(output).expanduser().write_text(msg + "\n", encoding="utf-8")
+            print(f"Wrote report to: {output}")
+        else:
+            print(msg)
+        return 2
+
+    want_json = json_out or (output and output.lower().endswith(".json"))
+
+    output_text = (
+        format_json(found, scanned)
+        if want_json
+        else f"Scanned {scanned} directories.\n\n{format_found(found, skipped, limit=limit)}"
+    )
+
+    if output:
+        Path(output).expanduser().write_text(output_text + "\n", encoding="utf-8")
+        print(f"Wrote report to: {output}")
+    else:
+        print(output_text)
+
+    return 0
 
 
 def main() -> int:
