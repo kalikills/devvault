@@ -289,3 +289,5 @@ DevVault has successfully crossed from project → system design.
 - Filesystem migration: migrated README detection to FileSystemPort (fs.exists) during FoundProject metadata build (tests green)
 - Filesystem migration: migrated test folder detection to FileSystemPort (fs.exists) during FoundProject metadata build (tests green)
 - Filesystem migration: migrated git presence metadata to FileSystemPort (fs.exists) during FoundProject build (tests green)
+
+- FilesystemPort migration milestone: scanner engine now routes traversal, existence checks, and metadata/stat access through FileSystemPort (iterdir/exists/is_dir/stat). This decouples core scan logic from the OS filesystem while keeping tests green.
