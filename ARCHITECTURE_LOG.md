@@ -319,3 +319,12 @@ This checkpoint finalizes filesystem abstraction and establishes the execution s
 
 DevVault continues its transition from tool → reliability system.
 
+
+## 2026-02-05T02:18:58Z — Phase 2: Real copy into incomplete backup directory
+
+- BackupEngine now copies the contents of `source_root` into `.incomplete-<backup_id>` before finalize.
+- Atomic finalize preserved: rename `.incomplete-*` → final backup directory after copy completes.
+- FileSystemPort explicitly includes `rename` and adds `copy_file`.
+- OSFileSystem implements streamed binary copy via `shutil.copyfileobj` (1 MiB chunks).
+- Safety-first: only directories + regular files copied; special filesystem nodes skipped for now.
+- Tests: added real-file copy test; suite green.
