@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,6 +23,9 @@ class OSFileSystem:
 
     def is_file(self, path: Path) -> bool:
         return path.is_file()
+    
+    def is_symlink(self, path: Path) -> bool:
+        return path.is_symlink()
 
     def read_text(self, path: Path, *, encoding: str = "utf-8") -> str:
         return path.read_text(encoding=encoding)

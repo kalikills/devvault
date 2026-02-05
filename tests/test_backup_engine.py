@@ -129,6 +129,42 @@ def test_backup_engine_manifest_failure_does_not_finalize(tmp_path: Path):
     # And the copied file should be there (proves copy happened before failure)
     assert (incomplete / "hello.txt").exists()
 
+def test_backup_engine_does_not_copy_symlinks(tmp_path: Path):
+    fs = OSFileSystem()
+    engine = BackupEngine(fs)
+
+    source = tmp_path / "src"
+    backup_root = tmp_path / "DevVault"
+    source.mkdir()
+    backup_root.mkdir()
+
+    target = source / "real.txt"
+    target.write_text("real\n", encoding="utf-8")
+
+    link = source / "link.txt"
+    link.symlink_to(target)
+
+    req = BackupRequest(
+        source_root=source,
+        backup_root=backup_root,
+        dry_run=False,
+    )
+
+    result = engine.execute(req)
+
+    # Regular file is copied
+    assert (result.backup_path / "real.txt").exists()
+
+    # Symlink should NOT be copied as a file
+    assert not (result.backup_path / "link.txt").exists()
+
+    # And it should not be listed as a normal file in the manifest
+    import json
+    data = json.loads((result.backup_path / "manifest.json").read_text(encoding="utf-8"))
+    paths = {f.get("path") for f in data.get("files", [])}
+    assert "real.txt" in paths
+    assert "link.txt" not in paths
+
 
 def test_backup_engine_dry_run_does_not_create_directory(tmp_path: Path):
     fs = OSFileSystem()
