@@ -343,3 +343,9 @@ DevVault continues its transition from tool → reliability system.
 - Manifest currently records copied regular files with relative paths and sizes.
 - Safety invariant: if manifest write fails, backup is not finalized; `.incomplete-*` remains for inspection/retry.
 - Copy → manifest → rename remains the atomic flow; finalized backups are self-describing.
+
+## 2026-02-05T02:57:25Z — Symlink policy (safety boundary)
+
+- Established policy: symlinks are not copied and are not listed as files in the manifest.
+- FileSystemPort includes `is_symlink`; OSFileSystem implements it using `Path.is_symlink()`.
+- Tests enforce that a symlink-to-file does not appear in backup output or manifest.
