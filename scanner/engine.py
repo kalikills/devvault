@@ -150,8 +150,9 @@ def scan_roots(
 
             for child in fs.iterdir(dir_path):
                 try:
-                    if not child.is_dir():
+                    if not fs.is_dir(child):
                         continue
+
 
                     name = child.name.lower()
 
