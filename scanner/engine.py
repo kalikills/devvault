@@ -34,6 +34,7 @@ class FoundProject:
     has_readme: bool
     has_tests: bool
 
+
 @dataclass(frozen=True)
 class ScanResult:
     projects: list[FoundProject]
@@ -73,6 +74,7 @@ def dir_size_bytes(
 
     return total
 
+
 def is_project_dir(
     p: Path,
     fs: FileSystemPort | None = None,
@@ -86,7 +88,6 @@ def is_project_dir(
     try:
         if fs.is_dir(p / ".git"):
             return True, "has .git"
-
 
         for name in (
             "pyproject.toml",
@@ -116,7 +117,6 @@ def scan_roots(
     dirs_scanned = 0
     dirs_skipped = 0
 
-
     def walk(dir_path: Path, depth: int) -> None:
         nonlocal dirs_scanned, dirs_skipped
         dirs_scanned += 1
@@ -139,7 +139,7 @@ def scan_roots(
                         size_bytes=size,
                         has_git=(dir_path / ".git").exists(),
                         has_readme=any(
-                            (dir_path / name).exists()
+                            fs.exists(dir_path / name)
                             for name in ("README.md", "README", "readme.md")
                         ),
                         has_tests=(dir_path / "tests").exists()
@@ -177,7 +177,6 @@ def scan_roots(
         if fs.exists(r) and fs.is_dir(r):
             walk(r, 0)
 
-
     found.sort(key=lambda x: x.last_modified, reverse=True)
     return found, dirs_scanned, dirs_skipped
 
@@ -185,11 +184,10 @@ def scan_roots(
 def scan(req: ScanRequest, fs: FileSystemPort | None = None) -> ScanResult:
     fs = fs or OSFileSystem()
     found, scanned, skipped = scan_roots(
-    roots=req.roots,
-    max_depth=req.depth,
-    fs=fs,
-)
-
+        roots=req.roots,
+        max_depth=req.depth,
+        fs=fs,
+    )
 
     if req.include:
         term = req.include.lower()
