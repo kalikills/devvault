@@ -11,3 +11,6 @@ class ScanRequest:
     limit: int = 30
     top: int = 0
     include: str = ""
+
+# Backup models
+from .backup import BackupRequest, BackupResult

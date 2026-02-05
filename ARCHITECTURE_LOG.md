@@ -291,3 +291,31 @@ DevVault has successfully crossed from project → system design.
 - Filesystem migration: migrated git presence metadata to FileSystemPort (fs.exists) during FoundProject build (tests green)
 
 - FilesystemPort migration milestone: scanner engine now routes traversal, existence checks, and metadata/stat access through FileSystemPort (iterdir/exists/is_dir/stat). This decouples core scan logic from the OS filesystem while keeping tests green.
+
+## 2026-02-04 — Filesystem adapter completed + tests green
+- Implemented OSFileSystem adapter methods needed by scan + backup engines (mkdir, exists, is_dir, iterdir, stat, is_file, read_text).
+- Resolved terminal paste/overwrite corruption by clean rewrite of scanner/adapters/filesystem.py.
+- Test status: python -m pytest -q → 6 passed.
+
+# Architecture Checkpoint — 2026-02-04
+Backup Engine Foundation + Filesystem Port Completion
+
+## Filesystem Layer
+- Expanded FileSystemPort to support engine needs (mkdir, exists, is_dir, is_file, iterdir, stat, read_text).
+- Stabilized OSFileSystem adapter.
+- Restored scan engine compatibility after port expansion.
+
+## Backup Engine
+- Introduced BackupEngine with plan → execute orchestration shape.
+- Enforced dependency injection through FileSystemPort.
+- Maintained CLI isolation (no printing from engine).
+
+## Testing
+- Added backup engine tests.
+- Full suite passing: 6 tests green.
+
+## Architectural Impact
+This checkpoint finalizes filesystem abstraction and establishes the execution shape for DevVault backups.
+
+DevVault continues its transition from tool → reliability system.
+
