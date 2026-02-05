@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,6 +63,9 @@ class BackupEngine:
         # Phase 2: copy data into incomplete destination
         self._copy_tree(src_root=request.source_root, dst_root=plan.incomplete_path)
 
+        # Phase 2.5: write manifest into incomplete destination
+        self._write_manifest(src_root=request.source_root, dst_root=plan.incomplete_path)
+
         # Phase 3: finalize atomically
         self._fs.rename(plan.incomplete_path, plan.backup_path)
 
@@ -91,3 +95,36 @@ class BackupEngine:
             return
 
         # Skip special files for now (symlinks, devices, etc.)
+
+    def _write_manifest(self, *, src_root: Path, dst_root: Path) -> None:
+        files = []
+        for rel_path in self._iter_files_relative(src_root):
+            st = self._fs.stat(src_root / rel_path)
+            files.append(
+                {
+                    "path": rel_path.as_posix(),
+                    "size": st.st_size,
+                }
+            )
+
+        manifest = {"files": files}
+
+        manifest_path = dst_root / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    def _iter_files_relative(self, root: Path):
+        for child in self._fs.iterdir(root):
+            yield from self._iter_files_relative_inner(root=root, node=child)
+
+    def _iter_files_relative_inner(self, *, root: Path, node: Path):
+        if self._fs.is_dir(node):
+            for child in self._fs.iterdir(node):
+                yield from self._iter_files_relative_inner(root=root, node=child)
+            return
+
+        if self._fs.is_file(node):
+            yield node.relative_to(root)
+            return
