@@ -137,7 +137,7 @@ def scan_roots(
                         last_modified=datetime.fromtimestamp(ts),
                         reason=reason,
                         size_bytes=size,
-                        has_git=(dir_path / ".git").exists(),
+                        has_git=fs.exists(dir_path / ".git"),
                         has_readme=any(
                             fs.exists(dir_path / name)
                             for name in ("README.md", "README", "readme.md")
