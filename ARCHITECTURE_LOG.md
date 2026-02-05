@@ -328,3 +328,11 @@ DevVault continues its transition from tool → reliability system.
 - OSFileSystem implements streamed binary copy via `shutil.copyfileobj` (1 MiB chunks).
 - Safety-first: only directories + regular files copied; special filesystem nodes skipped for now.
 - Tests: added real-file copy test; suite green.
+
+## 2026-02-05T02:32:27Z — Phase 2.5: Manifest Added
+
+- Backup engine now writes manifest.json inside .incomplete before finalize.
+- Manifest records relative file paths and sizes.
+- Final backups are now self-describing artifacts.
+- Atomic invariant strengthened: copy → manifest → rename.
+
