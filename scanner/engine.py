@@ -142,8 +142,8 @@ def scan_roots(
                             fs.exists(dir_path / name)
                             for name in ("README.md", "README", "readme.md")
                         ),
-                        has_tests=(dir_path / "tests").exists()
-                        or (dir_path / "test").exists(),
+                        has_tests=fs.exists(dir_path / "tests")
+                        or fs.exists(dir_path / "test"),
                     )
                 )
                 return

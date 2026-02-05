@@ -287,3 +287,4 @@ DevVault has successfully crossed from project → system design.
 - Filesystem migration: dir_size_bytes now uses fs.is_dir() for directory checks (tests green)
 - Filesystem migration: dir_size_bytes now uses fs.stat(entry).st_size for file sizing (tests green)
 - Filesystem migration: migrated README detection to FileSystemPort (fs.exists) during FoundProject metadata build (tests green)
+- Filesystem migration: migrated test folder detection to FileSystemPort (fs.exists) during FoundProject metadata build (tests green)
