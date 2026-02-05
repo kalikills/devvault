@@ -60,7 +60,7 @@ def dir_size_bytes(
         try:
             for entry in fs.iterdir(p):
                 try:
-                    if entry.is_dir():
+                    if fs.is_dir(entry):
                         if entry.name.lower() in skip:
                             continue
                         stack.append(entry)
