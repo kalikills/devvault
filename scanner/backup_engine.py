@@ -57,19 +57,26 @@ class BackupEngine:
                 dry_run=True,
             )
 
-        # Phase 1: create incomplete destination
+        # Phase 1 — create incomplete destination
         self._fs.mkdir(plan.incomplete_path, parents=True, exist_ok=False)
 
-        # Phase 2: copy data into incomplete destination
-        self._copy_tree(src_root=request.source_root, dst_root=plan.incomplete_path)
+        # Phase 2 — copy data
+        self._copy_tree(
+            src_root=request.source_root,
+            dst_root=plan.incomplete_path,
+        )
 
-        # Phase 2.5: write manifest into incomplete destination
-        self._write_manifest(src_root=request.source_root, dst_root=plan.incomplete_path)
+        # Phase 2.5 — write manifest
+        self._write_manifest(
+            src_root=request.source_root,
+            dst_root=plan.incomplete_path,
+        )
 
-        # Phase 3: finalize atomically
+        # Phase 3 — atomic finalize
         self._fs.rename(plan.incomplete_path, plan.backup_path)
 
         finished_at = datetime.now(timezone.utc)
+
         return BackupResult(
             backup_id=plan.backup_id,
             backup_path=plan.backup_path,
@@ -78,11 +85,19 @@ class BackupEngine:
             dry_run=False,
         )
 
+    # --------------------------------------------------------
+    # Copy Engine
+    # --------------------------------------------------------
+
     def _copy_tree(self, *, src_root: Path, dst_root: Path) -> None:
         for child in self._fs.iterdir(src_root):
             self._copy_node(src=child, dst=dst_root / child.name)
 
     def _copy_node(self, *, src: Path, dst: Path) -> None:
+        # Skip symlinks (policy)
+        if self._fs.is_symlink(src):
+            return
+
         if self._fs.is_dir(src):
             self._fs.mkdir(dst, parents=True, exist_ok=True)
             for child in self._fs.iterdir(src):
@@ -94,22 +109,30 @@ class BackupEngine:
             self._fs.copy_file(src, dst)
             return
 
-        # Skip special files for now (symlinks, devices, etc.)
+        # Skip special filesystem nodes silently for now
+
+    # --------------------------------------------------------
+    # Manifest
+    # --------------------------------------------------------
 
     def _write_manifest(self, *, src_root: Path, dst_root: Path) -> None:
         files = []
+
         for rel_path in self._iter_files_relative(src_root):
             st = self._fs.stat(src_root / rel_path)
+
             files.append(
                 {
                     "path": rel_path.as_posix(),
                     "size": st.st_size,
+                    "type": "file",
                 }
             )
 
         manifest = {"files": files}
 
         manifest_path = dst_root / "manifest.json"
+
         manifest_path.write_text(
             json.dumps(manifest, indent=2, sort_keys=True),
             encoding="utf-8",
@@ -120,6 +143,9 @@ class BackupEngine:
             yield from self._iter_files_relative_inner(root=root, node=child)
 
     def _iter_files_relative_inner(self, *, root: Path, node: Path):
+        if self._fs.is_symlink(node):
+            return
+
         if self._fs.is_dir(node):
             for child in self._fs.iterdir(node):
                 yield from self._iter_files_relative_inner(root=root, node=child)
