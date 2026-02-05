@@ -89,7 +89,7 @@ def is_project_dir(
             "go.mod",
             "requirements.txt",
         ):
-            if (p / name).is_file():
+            if fs.exists(p / name):
                 return True, f"has {name}"
 
     except (PermissionError, FileNotFoundError, OSError):
