@@ -42,7 +42,13 @@ class ScanResult:
 
 
 # ✅ FAST directory size calculator
-def dir_size_bytes(root: Path) -> int:
+def dir_size_bytes(
+    root: Path,
+    fs: FileSystemPort | None = None,
+) -> int:
+
+    fs = fs or OSFileSystem()
+
     skip = {".git", ".venv", "venv", "__pycache__", "node_modules"}
 
     total = 0
@@ -52,7 +58,7 @@ def dir_size_bytes(root: Path) -> int:
         p = stack.pop()
 
         try:
-            for entry in p.iterdir():
+            for entry in fs.iterdir(p):
                 try:
                     if entry.is_dir():
                         if entry.name.lower() in skip:

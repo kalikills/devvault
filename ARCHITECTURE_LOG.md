@@ -283,3 +283,4 @@ DevVault has successfully crossed from project → system design.
 - Filesystem migration: moved .git detection to FileSystemPort (fs.is_dir), further reducing engine OS coupling (tests green)
 - Filesystem migration: replaced project marker `.is_file()` checks with fs.exists(), continuing engine decoupling from OS (tests green)
 - Filesystem migration: moved dir_path mtime retrieval to fs.stat(dir_path).st_mtime (tests green)
+- Filesystem migration: injected FileSystemPort into dir_size_bytes and migrated iteration to fs.iterdir() (tests green)
