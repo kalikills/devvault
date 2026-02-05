@@ -29,7 +29,6 @@ class BackupEngine:
         self._fs = fs
 
     def plan(self, request) -> BackupPlan:
-        # Stable, sortable-ish id: YYYYMMDDTHHMMSSZ-<8chars>
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         suffix = uuid4().hex[:8]
         backup_id = f"{ts}-{suffix}"
@@ -60,8 +59,8 @@ class BackupEngine:
         # Phase 1: create incomplete destination
         self._fs.mkdir(plan.incomplete_path, parents=True, exist_ok=False)
 
-        # Phase 2: (future) copy data into incomplete destination
-        # - For now we're only proving the atomic directory flow.
+        # Phase 2: copy data into incomplete destination
+        self._copy_tree(src_root=request.source_root, dst_root=plan.incomplete_path)
 
         # Phase 3: finalize atomically
         self._fs.rename(plan.incomplete_path, plan.backup_path)
@@ -74,3 +73,21 @@ class BackupEngine:
             finished_at=finished_at,
             dry_run=False,
         )
+
+    def _copy_tree(self, *, src_root: Path, dst_root: Path) -> None:
+        for child in self._fs.iterdir(src_root):
+            self._copy_node(src=child, dst=dst_root / child.name)
+
+    def _copy_node(self, *, src: Path, dst: Path) -> None:
+        if self._fs.is_dir(src):
+            self._fs.mkdir(dst, parents=True, exist_ok=True)
+            for child in self._fs.iterdir(src):
+                self._copy_node(src=child, dst=dst / child.name)
+            return
+
+        if self._fs.is_file(src):
+            self._fs.mkdir(dst.parent, parents=True, exist_ok=True)
+            self._fs.copy_file(src, dst)
+            return
+
+        # Skip special files for now (symlinks, devices, etc.)

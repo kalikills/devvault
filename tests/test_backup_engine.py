@@ -29,6 +29,35 @@ def test_backup_engine_creates_directory(tmp_path: Path):
     assert not incomplete.exists()
 
 
+def test_backup_engine_copies_files_into_backup(tmp_path: Path):
+    fs = OSFileSystem()
+    engine = BackupEngine(fs)
+
+    source = tmp_path / "src"
+    backup_root = tmp_path / "DevVault"
+    source.mkdir()
+    backup_root.mkdir()
+
+    src_file = source / "hello.txt"
+    src_bytes = (b"hello devvault\n" * 1000)
+    src_file.write_bytes(src_bytes)
+
+    req = BackupRequest(
+        source_root=source,
+        backup_root=backup_root,
+        dry_run=False,
+    )
+
+    result = engine.execute(req)
+
+    dst_file = result.backup_path / "hello.txt"
+    assert dst_file.exists()
+    assert dst_file.read_bytes() == src_bytes
+
+    incomplete = backup_root / f".incomplete-{result.backup_path.name}"
+    assert not incomplete.exists()
+
+
 def test_backup_engine_dry_run_does_not_create_directory(tmp_path: Path):
     fs = OSFileSystem()
     engine = BackupEngine(fs)

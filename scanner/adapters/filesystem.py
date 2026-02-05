@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 
 
 class OSFileSystem:
@@ -27,3 +28,7 @@ class OSFileSystem:
 
     def rename(self, src: Path, dst: Path) -> None:
         src.rename(dst)
+
+    def copy_file(self, src: Path, dst: Path) -> None:
+        with src.open("rb") as r, dst.open("wb") as w:
+            shutil.copyfileobj(r, w, length=1024 * 1024)
