@@ -336,3 +336,10 @@ DevVault continues its transition from tool → reliability system.
 - Final backups are now self-describing artifacts.
 - Atomic invariant strengthened: copy → manifest → rename.
 
+
+## 2026-02-05T02:36:51Z — Phase 2.5: Backup manifest + failure-safety invariant
+
+- Backups now include `manifest.json` written inside `.incomplete-*` before finalize.
+- Manifest currently records copied regular files with relative paths and sizes.
+- Safety invariant: if manifest write fails, backup is not finalized; `.incomplete-*` remains for inspection/retry.
+- Copy → manifest → rename remains the atomic flow; finalized backups are self-describing.
