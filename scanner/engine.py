@@ -129,7 +129,7 @@ def scan_roots(
 
             if ok:
                 ts = fs.stat(dir_path).st_mtime
-                size = dir_size_bytes(dir_path)
+                size = dir_size_bytes(dir_path, fs=fs)
 
                 found.append(
                     FoundProject(
