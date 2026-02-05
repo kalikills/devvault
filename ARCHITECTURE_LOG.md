@@ -285,3 +285,4 @@ DevVault has successfully crossed from project → system design.
 - Filesystem migration: moved dir_path mtime retrieval to fs.stat(dir_path).st_mtime (tests green)
 - Filesystem migration: injected FileSystemPort into dir_size_bytes and migrated iteration to fs.iterdir() (tests green)
 - Filesystem migration: dir_size_bytes now uses fs.is_dir() for directory checks (tests green)
+- Filesystem migration: dir_size_bytes now uses fs.stat(entry).st_size for file sizing (tests green)

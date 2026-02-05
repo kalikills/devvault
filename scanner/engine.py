@@ -65,7 +65,7 @@ def dir_size_bytes(
                             continue
                         stack.append(entry)
                     else:
-                        total += entry.stat().st_size
+                        total += fs.stat(entry).st_size
                 except (PermissionError, FileNotFoundError, OSError):
                     continue
         except (PermissionError, FileNotFoundError, OSError):
