@@ -58,6 +58,78 @@ def test_backup_engine_copies_files_into_backup(tmp_path: Path):
     assert not incomplete.exists()
 
 
+def test_backup_engine_writes_manifest_json(tmp_path: Path):
+    fs = OSFileSystem()
+    engine = BackupEngine(fs)
+
+    source = tmp_path / "src"
+    backup_root = tmp_path / "DevVault"
+    source.mkdir()
+    backup_root.mkdir()
+
+    src_file = source / "hello.txt"
+    src_bytes = (b"hello devvault\\n" * 1000)
+    src_file.write_bytes(src_bytes)
+
+    req = BackupRequest(
+        source_root=source,
+        backup_root=backup_root,
+        dry_run=False,
+    )
+
+    result = engine.execute(req)
+
+    manifest_path = result.backup_path / "manifest.json"
+    assert manifest_path.exists(), "manifest.json must exist in finalized backup directory"
+
+    import json
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert "files" in data
+    assert isinstance(data["files"], list)
+
+    match = [f for f in data["files"] if f.get("path") == "hello.txt"]
+    assert match, "manifest must include entry for hello.txt"
+
+def test_backup_engine_manifest_failure_does_not_finalize(tmp_path: Path):
+    class ExplodingBackupEngine(BackupEngine):
+        def _write_manifest(self, *, src_root: Path, dst_root: Path) -> None:
+            raise RuntimeError("boom: manifest write failed")
+
+    fs = OSFileSystem()
+    engine = ExplodingBackupEngine(fs)
+
+    source = tmp_path / "src"
+    backup_root = tmp_path / "DevVault"
+    source.mkdir()
+    backup_root.mkdir()
+
+    # Put at least one file so Phase 2 actually copies something before failing
+    (source / "hello.txt").write_text("hello\n", encoding="utf-8")
+
+    req = BackupRequest(
+        source_root=source,
+        backup_root=backup_root,
+        dry_run=False,
+    )
+
+    import pytest
+    with pytest.raises(RuntimeError):
+        engine.execute(req)
+
+    # Should NOT have finalized any non-incomplete backup directory
+    finalized = [p for p in backup_root.iterdir() if p.is_dir() and not p.name.startswith(".incomplete-")]
+    assert finalized == []
+
+    # Should have exactly one incomplete directory left behind
+    incompletes = [p for p in backup_root.iterdir() if p.is_dir() and p.name.startswith(".incomplete-")]
+    assert len(incompletes) == 1
+    incomplete = incompletes[0]
+
+    # And the copied file should be there (proves copy happened before failure)
+    assert (incomplete / "hello.txt").exists()
+
+
 def test_backup_engine_dry_run_does_not_create_directory(tmp_path: Path):
     fs = OSFileSystem()
     engine = BackupEngine(fs)
