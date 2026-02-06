@@ -434,3 +434,11 @@ DevVault transitions from "backup tool" → **verification-capable backup engine
 - Added tests ensuring restore rejects tampered manifests and that failure produces no destination side effects.
 - Backward compatibility: manifests without `manifest_integrity` continue to restore (integrity is optional for older snapshots).
 - Sets foundation for future tamper resistance (HMAC/signature) and future encryption by centralizing canonicalization and verification.
+
+## 2026-02-06 — Manifest tamper resistance via HMAC (Tier 2)
+
+- Added environment-sourced HMAC key loading (`DEVVAULT_MANIFEST_HMAC_KEY_HEX`, hex-encoded, min 32 bytes).
+- Manifest integrity now supports `algo: sha256` and `algo: hmac-sha256` using the same canonical JSON representation.
+- Backup emits `hmac-sha256` when key is available; otherwise continues `sha256` for backward compatibility.
+- Restore verifies integrity immediately after loading the manifest; if manifest declares HMAC and key is missing, restore fails closed.
+- Added tests for missing-key fail-closed behavior and successful HMAC restore with key present.
