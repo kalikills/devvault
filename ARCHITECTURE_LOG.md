@@ -466,3 +466,13 @@ DevVault transitions from "backup tool" → **verification-capable backup engine
   - `nonce_policy` (explicit nonce requirements to prevent unsafe defaults)
 - Added tests to accept a well-formed aes-gcm crypto stanza and reject missing fields.
 - Restore continues to treat encryption as schema-only for now (no encryption/decryption implemented yet).
+
+## 2026-02-06 — Snapshot verification command (ship-ready)
+
+- Added `scanner/verify_engine.py` to validate snapshots without restoring:
+  - verifies manifest integrity (sha256/HMAC)
+  - validates crypto stanza schema
+  - validates file existence + sizes
+  - verifies per-file sha256 digests for v2 manifests
+- Exposed `devvault verify <snapshot_dir>` in CLI with JSON/output support.
+- This enables periodic health checks of backup sets and strengthens operational trust without performing restores.
