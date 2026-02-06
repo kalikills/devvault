@@ -563,3 +563,36 @@ Desktop now enforces:
 
 **Architecture Impact:**
 Core remains OS-agnostic; Desktop owns UX guardrails and prevents unsafe user input paths.
+
+
+## 2026-02-06 — Snapshot Metadata Reader (Core)
+
+**Decision:**
+Added `scanner.snapshot_metadata.read_snapshot_metadata` to provide a fail-closed, lightweight metadata surface for snapshots.
+
+**Why:**
+Desktop and future clients need structured snapshot information without scanning the filesystem or performing expensive verification.
+
+**Metadata Source:**
+- Derived strictly from `manifest.json`
+- No directory traversal
+- No hashing
+- No implicit filesystem inference
+
+**Fields Introduced:**
+- snapshot_id  
+- created_at (parsed from BackupEngine timestamp when possible)  
+- manifest_version  
+- checksum_algo  
+- file_count  
+- total_bytes  
+
+**Architectural Impact:**
+- Establishes core ownership of snapshot metadata.
+- Prevents UI-layer metadata duplication.
+- Enables richer snapshot selection UX without future refactors.
+
+**Safety Properties:**
+- Fail-closed on malformed manifests.
+- No heavy I/O.
+- Deterministic behavior.
