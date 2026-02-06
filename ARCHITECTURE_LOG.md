@@ -457,3 +457,12 @@ DevVault transitions from "backup tool" → **verification-capable backup engine
 - Current accepted crypto schema: `version: 1` and `content.scheme: "none"`; unknown schemes fail closed.
 - Added tests to accept `scheme: none` and reject unknown schemes without creating destination side effects.
 - This establishes the manifest-level “encryption switch” boundary for future work without changing current backup/restore behavior.
+
+## 2026-02-06 — Crypto schema: aes-256-gcm metadata (schema-only)
+
+- Extended manifest `crypto` stanza validation to accept `scheme: aes-256-gcm` with strict required metadata:
+  - `key_id` (for future rotation/multi-key support)
+  - `aad` (domain separation/binding)
+  - `nonce_policy` (explicit nonce requirements to prevent unsafe defaults)
+- Added tests to accept a well-formed aes-gcm crypto stanza and reject missing fields.
+- Restore continues to treat encryption as schema-only for now (no encryption/decryption implemented yet).
