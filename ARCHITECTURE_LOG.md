@@ -706,3 +706,24 @@ Detect vault availability and structural issues before backup or restore operati
 
 **Design Principle:**
 Backups should fail loudly — never silently.
+
+
+## 2026-02-06 — Desktop Vault Health Gate (Fail-Closed UX)
+
+**Decision:**
+Desktop now refuses to start backup or restore operations unless the vault health probe passes.
+
+**Behavior:**
+- Before backup: run `check_vault_health()` on the resolved vault directory.
+- Before restore: run `check_vault_health()` before opening the snapshot picker.
+- If unhealthy: fail closed with a user-facing error and do not invoke engine paths.
+
+**Why:**
+Prevents silent backup failures (e.g., disconnected / unwritable vault) and preserves user trust.
+
+**Safety Boundary:**
+- Core defines vault health (`scanner.vault_health`).
+- Desktop enforces UX refusal before invoking data-plane operations.
+
+**Result:**
+Backup and restore now require a healthy vault, reducing real-world failure risk substantially.
