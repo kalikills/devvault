@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from devvault_desktop.config import load_config
+
 
 # Canonical vault path for the PRODUCT (Windows desktop).
 DEFAULT_VAULT_WINDOWS = r"D:\DevVault"
@@ -61,11 +63,20 @@ def get_vault_dir() -> Path:
     """Resolve vault directory (canonical storage location).
 
     Precedence:
-      1) DEVVAULT_VAULT_DIR env var (Windows-style or POSIX)
-      2) default (Windows-style) path
+      1) DEVVAULT_VAULT_DIR env var (Windows-style or POSIX) for dev/testing overrides
+      2) Desktop config file key: vault_dir
+      3) Default (Windows-style) path
     """
-    raw = os.environ.get("DEVVAULT_VAULT_DIR", DEFAULT_VAULT_WINDOWS)
-    return windows_path_to_wsl_path(raw)
+    env = os.environ.get("DEVVAULT_VAULT_DIR")
+    if env:
+        return windows_path_to_wsl_path(env)
+
+    cfg = load_config()
+    cfg_vault = cfg.get("vault_dir")
+    if isinstance(cfg_vault, str) and cfg_vault.strip():
+        return windows_path_to_wsl_path(cfg_vault.strip())
+
+    return windows_path_to_wsl_path(DEFAULT_VAULT_WINDOWS)
 
 
 def vault_preflight(vault_dir: Path) -> Optional[str]:
