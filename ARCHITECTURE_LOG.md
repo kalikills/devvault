@@ -442,3 +442,10 @@ DevVault transitions from "backup tool" → **verification-capable backup engine
 - Backup emits `hmac-sha256` when key is available; otherwise continues `sha256` for backward compatibility.
 - Restore verifies integrity immediately after loading the manifest; if manifest declares HMAC and key is missing, restore fails closed.
 - Added tests for missing-key fail-closed behavior and successful HMAC restore with key present.
+
+## 2026-02-06 — Crypto boundary and master key derivation (encryption-ready)
+
+- Introduced `scanner/crypto/kdf.py` implementing HKDF-SHA256 (RFC 5869) as a stable key-derivation boundary.
+- Standardized secret sourcing on `DEVVAULT_MASTER_KEY_HEX` (hex, min 32 bytes) for future crypto features.
+- Updated manifest HMAC key loading to prefer derived subkeys from the master key; falls back to `DEVVAULT_MANIFEST_HMAC_KEY_HEX` for compatibility.
+- Added tests covering HKDF determinism and key precedence (master overrides manifest-specific key).
