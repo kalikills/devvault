@@ -4,10 +4,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from pathlib import Path
 
-from scanner.vault_health import check_vault_health
 
 from devvault_desktop.config import set_vault_dir
-from scanner.adapters.filesystem import OSFileSystem
+from devvault_desktop.vault_gate import require_vault_ready
 from devvault_desktop.snapshot_picker import SnapshotPicker
 from devvault_desktop.restore_preflight import preflight_restore_destination
 
@@ -92,12 +91,11 @@ class DevVaultApp(tk.Tk):
 
     def _require_healthy_vault(self) -> bool:
         vault_dir = get_vault_dir()
-        fs = OSFileSystem()
-        res = check_vault_health(fs=fs, backup_root=vault_dir)
+        res = require_vault_ready(vault_dir=vault_dir)
         if not res.ok:
             messagebox.showerror(
                 "Vault Unhealthy",
-                f"Vault is not healthy:\n{vault_dir}\n\nReason: {res.reason}",
+                f"Vault is not ready:\n{vault_dir}\n\nReason: {res.reason}",
             )
             return False
         return True

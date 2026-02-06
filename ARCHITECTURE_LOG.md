@@ -727,3 +727,24 @@ Prevents silent backup failures (e.g., disconnected / unwritable vault) and pres
 
 **Result:**
 Backup and restore now require a healthy vault, reducing real-world failure risk substantially.
+
+
+## 2026-02-06 — Desktop Vault Gate Consolidation
+
+**Decision:**
+Introduced `devvault_desktop.vault_gate.require_vault_ready` to centralize Desktop vault readiness checks.
+
+**Why:**
+Desktop safety checks were correct but distributed across UI code, increasing cognitive load and duplication risk.
+
+**Behavior:**
+`require_vault_ready()` combines:
+- `vault_preflight` (writability / fail-closed)
+- `check_vault_health` (readability + index load/rebuild)
+
+Desktop now calls a single gate before invoking backup/restore.
+
+**Architectural Impact:**
+- Reduces UI-layer complexity.
+- Keeps safety boundaries intact (core defines health; desktop enforces UX refusal).
+- Makes future operational UX changes lower risk and easier to reason about.
