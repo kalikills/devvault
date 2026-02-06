@@ -30,6 +30,9 @@ class OSFileSystem:
     def read_text(self, path: Path, *, encoding: str = "utf-8") -> str:
         return path.read_text(encoding=encoding)
 
+    def write_text(self, path: Path, data: str, *, encoding: str = "utf-8") -> None:
+        path.write_text(data, encoding=encoding)
+
     def rename(self, src: Path, dst: Path) -> None:
         src.rename(dst)
 

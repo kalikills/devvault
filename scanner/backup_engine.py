@@ -133,7 +133,8 @@ class BackupEngine:
 
         manifest_path = dst_root / "manifest.json"
 
-        manifest_path.write_text(
+        self._fs.write_text(
+            manifest_path,
             json.dumps(manifest, indent=2, sort_keys=True),
             encoding="utf-8",
         )
