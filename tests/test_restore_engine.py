@@ -90,3 +90,34 @@ def test_restore_refuses_non_empty_destination(tmp_path: Path) -> None:
                 destination_dir=restore_dest,
             )
         )
+
+
+def test_restore_rejects_path_traversal_manifest(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+
+    # Malicious manifest entry attempting to escape destination.
+    (snapshot / "manifest.json").write_text(
+        json.dumps(
+            {
+                "files": [
+                    {"path": "../evil.txt", "size": 1, "type": "file"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    restore_dest = tmp_path / "restore_dest"
+
+    engine = RestoreEngine(fs=fs)
+
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=restore_dest))
+
+    # Fail-closed: destination should not be created as a side effect of invalid manifest.
+    assert not restore_dest.exists()
