@@ -449,3 +449,11 @@ DevVault transitions from "backup tool" → **verification-capable backup engine
 - Standardized secret sourcing on `DEVVAULT_MASTER_KEY_HEX` (hex, min 32 bytes) for future crypto features.
 - Updated manifest HMAC key loading to prefer derived subkeys from the master key; falls back to `DEVVAULT_MANIFEST_HMAC_KEY_HEX` for compatibility.
 - Added tests covering HKDF determinism and key precedence (master overrides manifest-specific key).
+
+## 2026-02-06 — Manifest crypto stanza (forward-compatible schema)
+
+- Added `scanner/manifest_schema.py` with strict validation for optional `crypto` stanza.
+- Restore validates `crypto` immediately after manifest integrity verification.
+- Current accepted crypto schema: `version: 1` and `content.scheme: "none"`; unknown schemes fail closed.
+- Added tests to accept `scheme: none` and reject unknown schemes without creating destination side effects.
+- This establishes the manifest-level “encryption switch” boundary for future work without changing current backup/restore behavior.
