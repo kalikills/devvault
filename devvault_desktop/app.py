@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 
 
@@ -60,6 +60,11 @@ class DevVaultApp(tk.Tk):
         )
         self.change_vault_btn.grid(row=0, column=0, padx=8)
 
+        # Progress indicator (indeterminate; UX signal only)
+        self.progress = ttk.Progressbar(self, mode="indeterminate")
+        self.progress.pack(padx=12, pady=(6, 0), fill="x")
+        self.progress.stop()
+
         # Log area
         self.log = tk.Text(self, height=10, width=78, state="disabled")
         self.log.pack(padx=12, pady=(12, 12))
@@ -78,6 +83,14 @@ class DevVaultApp(tk.Tk):
         self.backup_btn.configure(state=state)
         self.restore_btn.configure(state=state)
         self.change_vault_btn.configure(state=state)
+        # Visual signal: spinner/progress bar
+        try:
+            if busy:
+                self.progress.start(12)
+            else:
+                self.progress.stop()
+        except Exception:
+            pass
         self.update_idletasks()
 
     def _refresh_vault_ui(self) -> None:
