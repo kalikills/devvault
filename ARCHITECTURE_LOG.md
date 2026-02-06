@@ -748,3 +748,33 @@ Desktop now calls a single gate before invoking backup/restore.
 - Reduces UI-layer complexity.
 - Keeps safety boundaries intact (core defines health; desktop enforces UX refusal).
 - Makes future operational UX changes lower risk and easier to reason about.
+
+
+## 2026-02-06 — Foundational Product Pillar Established
+
+**Trustwear Positioning Statement:**
+DevVault is a safety system for people whose work cannot be recreated.
+
+**Classification:** Category Anchor / Product North Star
+
+**Intent:**
+DevVault is not convenience backup software.
+
+It is safety infrastructure designed for creators and professionals whose digital output represents irreversible time, skill, and livelihood.
+
+**Design Consequences:**
+- Safety is prioritized over speed or feature volume.
+- Restore reliability is treated as a product-defining capability.
+- Fail-closed behavior is preferred wherever data risk exists.
+- User experience must reinforce calm, competence, and trust.
+
+**Target Persona (Launch):**
+Serious creators — developers, media producers, designers, and other professionals who cannot afford data loss.
+
+**Architectural Direction:**
+Every major system decision should be evaluated against one question:
+
+> Does this increase or decrease user trust?
+
+If unclear, bias toward the safer design.
+
