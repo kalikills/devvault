@@ -543,3 +543,23 @@ Prevent Desktop and future clients from browsing arbitrary directories when sele
 
 **Risk Reduction:**
 Eliminates an entire class of user-error restores from invalid directories.
+
+
+## 2026-02-06 — Snapshot Picker + Restore Guardrails (Desktop)
+
+**Decision:**
+Hardened Desktop restore UX so users cannot browse arbitrary directories for snapshots.
+
+**Changes:**
+- Added `devvault_desktop.snapshot_picker.SnapshotPicker` which lists snapshots from the vault using `scanner.snapshot_listing.list_snapshots`.
+- Updated Desktop restore flow to require selecting a snapshot from the vault picker (no filesystem browsing for snapshot source).
+- Added `devvault_desktop.restore_preflight.preflight_restore_destination` to fail closed unless destination exists, is a directory, and is empty.
+- Added tests for restore destination preflight.
+
+**Safety Boundary:**
+Desktop now enforces:
+- Snapshot source must come from the configured vault root and must be a finalized snapshot with `manifest.json`.
+- Restore destination must be preflighted and rejected before invoking the restore engine.
+
+**Architecture Impact:**
+Core remains OS-agnostic; Desktop owns UX guardrails and prevents unsafe user input paths.

@@ -5,6 +5,9 @@ from tkinter import filedialog, messagebox
 from pathlib import Path
 
 from devvault_desktop.config import set_vault_dir
+from devvault_desktop.snapshot_picker import SnapshotPicker
+from devvault_desktop.restore_preflight import preflight_restore_destination
+
 from devvault_desktop.runner import (
     DEFAULT_VAULT_WINDOWS,
     best_effort_fs_warning,
@@ -130,16 +133,25 @@ class DevVaultApp(tk.Tk):
             self._set_busy(False)
 
     def on_restore(self) -> None:
-        snap = filedialog.askdirectory(title="Select snapshot directory to restore from")
-        if not snap:
+        vault_dir = get_vault_dir()
+
+        picker = SnapshotPicker(self, vault_dir=vault_dir)
+        picked = picker.pick()
+        if not picked:
             return
 
         dst = filedialog.askdirectory(title="Select EMPTY destination directory for restore")
         if not dst:
             return
 
-        snap_path = Path(snap)
+        snap_path = picked.snapshot_dir
         dst_path = Path(dst)
+
+        # Fail-closed destination preflight BEFORE engine call
+        pre = preflight_restore_destination(dst_path)
+        if not pre.ok:
+            messagebox.showerror("Invalid Restore Destination", pre.reason)
+            return
 
         self._set_busy(True)
         try:
