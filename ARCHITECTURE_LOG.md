@@ -349,3 +349,30 @@ DevVault continues its transition from tool → reliability system.
 - Established policy: symlinks are not copied and are not listed as files in the manifest.
 - FileSystemPort includes `is_symlink`; OSFileSystem implements it using `Path.is_symlink()`.
 - Tests enforce that a symlink-to-file does not appear in backup output or manifest.
+
+
+# Architecture Checkpoint — Restore Engine + Boundary Enforcement
+
+## Restore Capability Added
+- Implemented RestoreEngine with FileSystemPort injection.
+- Enforced safety invariant: destination must be empty.
+- Refuses restore from `.incomplete-*` snapshots.
+- Validates manifest before restore begins.
+
+## Disaster Recovery Proven
+- Added round-trip test: backup → restore → byte verification.
+- DevVault artifacts are now confirmed recoverable.
+
+## Filesystem Boundary Hardened
+- Added `write_text` to FileSystemPort.
+- Updated OSFileSystem adapter.
+- Routed manifest writes through the port.
+- Eliminated direct Path write inside engine.
+
+## Architectural Impact
+DevVault now supports the full backup lifecycle:
+
+scan → snapshot → manifest → finalize → **restore**
+
+This marks DevVault’s transition from backup utility → reliability system.
+
