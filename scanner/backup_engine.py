@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from scanner.checksum import hash_path
 from scanner.manifest_integrity import add_integrity_block
+from scanner.integrity_keys import load_manifest_hmac_key_from_env
 from scanner.ports.filesystem import FileSystemPort
 
 
@@ -142,7 +143,8 @@ class BackupEngine:
             "files": files,
         }
 
-        manifest = add_integrity_block(manifest)
+        hmac_key = load_manifest_hmac_key_from_env()
+        manifest = add_integrity_block(manifest, hmac_key=hmac_key)
 
         manifest_path = dst_root / "manifest.json"
 

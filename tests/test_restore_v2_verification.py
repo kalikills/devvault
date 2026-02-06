@@ -8,6 +8,7 @@ import pytest
 from scanner.adapters.filesystem import OSFileSystem
 from scanner.checksum import hash_path
 from scanner.manifest_integrity import add_integrity_block
+from scanner.integrity_keys import load_manifest_hmac_key_from_env
 from scanner.restore_engine import RestoreEngine, RestoreRequest
 
 
@@ -114,3 +115,75 @@ def test_restore_rejects_manifest_integrity_mismatch(tmp_path: Path) -> None:
 
     # Fail-closed: destination should not be created as a side effect.
     assert not dst.exists()
+
+
+def test_restore_rejects_hmac_manifest_when_key_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    data_file = snapshot / "hello.txt"
+    data_file.write_text("hello", encoding="utf-8")
+
+    d = hash_path(fs, data_file, algo="sha256")
+
+    # Create a manifest with HMAC integrity using a known key.
+    monkeypatch.setenv("DEVVAULT_MANIFEST_HMAC_KEY_HEX", "11" * 32)
+    hmac_key = load_manifest_hmac_key_from_env()
+    assert hmac_key is not None
+
+    manifest = {
+        "manifest_version": 2,
+        "checksum_algo": "sha256",
+        "files": [
+            {"path": "hello.txt", "size": data_file.stat().st_size, "type": "file", "digest_hex": d.hex}
+        ],
+    }
+    manifest = add_integrity_block(manifest, hmac_key=hmac_key)
+    (snapshot / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+    # Now simulate restore on a machine without the key: MUST fail closed.
+    monkeypatch.delenv("DEVVAULT_MANIFEST_HMAC_KEY_HEX", raising=False)
+
+    with pytest.raises(RuntimeError, match="integrity check failed"):
+        engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+
+    assert not dst.exists()
+
+
+def test_restore_accepts_hmac_manifest_when_key_present(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    data_file = snapshot / "hello.txt"
+    data_file.write_text("hello", encoding="utf-8")
+
+    d = hash_path(fs, data_file, algo="sha256")
+
+    # Set the key and write an HMAC manifest.
+    monkeypatch.setenv("DEVVAULT_MANIFEST_HMAC_KEY_HEX", "22" * 32)
+    hmac_key = load_manifest_hmac_key_from_env()
+    assert hmac_key is not None
+
+    manifest = {
+        "manifest_version": 2,
+        "checksum_algo": "sha256",
+        "files": [
+            {"path": "hello.txt", "size": data_file.stat().st_size, "type": "file", "digest_hex": d.hex}
+        ],
+    }
+    manifest = add_integrity_block(manifest, hmac_key=hmac_key)
+    (snapshot / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+    engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+
+    out = dst / "hello.txt"
+    assert out.exists()
+    assert out.read_text(encoding="utf-8") == "hello"

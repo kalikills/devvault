@@ -6,6 +6,7 @@ from pathlib import Path
 
 from scanner.checksum import hash_path
 from scanner.manifest_integrity import verify_manifest_integrity
+from scanner.integrity_keys import load_manifest_hmac_key_from_env
 from scanner.ports.filesystem import FileSystemPort
 
 
@@ -45,7 +46,9 @@ class RestoreEngine:
         # --- Load + validate manifest (fail closed) ---
         manifest = json.loads(self.fs.read_text(manifest_path))
 
-        ok, _reason = verify_manifest_integrity(manifest)
+        hmac_key = load_manifest_hmac_key_from_env()
+
+        ok, _reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
         if not ok:
             raise RuntimeError("Invalid manifest: integrity check failed.")
 
