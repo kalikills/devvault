@@ -376,3 +376,8 @@ scan → snapshot → manifest → finalize → **restore**
 
 This marks DevVault’s transition from backup utility → reliability system.
 
+
+## Addendum — Restore Safety Guardrails
+- Added test enforcing invariant: restore refuses non-empty destination.
+- Protects against accidental overwrite/merge restores during future refactors.
+
