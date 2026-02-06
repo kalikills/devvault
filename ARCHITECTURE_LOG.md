@@ -381,3 +381,10 @@ This marks DevVault’s transition from backup utility → reliability system.
 - Added test enforcing invariant: restore refuses non-empty destination.
 - Protects against accidental overwrite/merge restores during future refactors.
 
+
+## Addendum — Restore Preflight + Artifact Validation
+- Restore now performs full preflight validation before writing any destination data.
+- Refuses unsafe manifest paths (absolute or traversal via `..`).
+- Validates snapshot integrity via existence + size matching against manifest.
+- Ensures fail-closed behavior: invalid manifests do not create/modify destination directories.
+
