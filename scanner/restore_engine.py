@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scanner.checksum import hash_path
+from scanner.manifest_integrity import verify_manifest_integrity
 from scanner.ports.filesystem import FileSystemPort
 
 
@@ -43,6 +44,10 @@ class RestoreEngine:
 
         # --- Load + validate manifest (fail closed) ---
         manifest = json.loads(self.fs.read_text(manifest_path))
+
+        ok, _reason = verify_manifest_integrity(manifest)
+        if not ok:
+            raise RuntimeError("Invalid manifest: integrity check failed.")
 
         files = manifest.get("files")
         if not isinstance(files, list):

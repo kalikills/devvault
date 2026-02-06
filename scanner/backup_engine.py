@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from scanner.checksum import hash_path
+from scanner.manifest_integrity import add_integrity_block
 from scanner.ports.filesystem import FileSystemPort
 
 
@@ -140,6 +141,8 @@ class BackupEngine:
             "checksum_algo": algo,
             "files": files,
         }
+
+        manifest = add_integrity_block(manifest)
 
         manifest_path = dst_root / "manifest.json"
 
