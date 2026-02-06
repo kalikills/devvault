@@ -647,3 +647,33 @@ Prevents UI latency as vault size grows while maintaining fail-closed behavior.
 **Design Principle:**
 Correctness lives in the data plane (snapshots + manifests).  
 Performance lives in the control plane (index).
+
+
+## 2026-02-06 — Index-Backed Snapshot Picker (Desktop)
+
+**Decision:**
+Upgraded the Desktop Snapshot Picker to use the index-preferred Snapshot Rows API.
+
+**Behavior:**
+- Snapshot picker no longer enumerates directories directly.
+- Uses `get_snapshot_rows()` for instant vault loading.
+- Displays human-readable metadata:
+  - timestamp
+  - file count
+  - total size
+
+**Why:**
+Optimizes restore UX while ensuring scalability as vault size grows.
+
+**Safety Boundary:**
+- Desktop still never parses manifests.
+- Snapshot directories remain validated by core.
+- Restore path unchanged.
+
+**Architectural Impact:**
+- Desktop now consumes the control plane instead of filesystem structure.
+- UI performance is decoupled from vault size.
+- Reinforces separation between data plane and control plane.
+
+**Result:**
+DevVault now behaves like professional backup software rather than a developer utility.

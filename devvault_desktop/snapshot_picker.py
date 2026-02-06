@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scanner.adapters.filesystem import OSFileSystem
-from scanner.snapshot_listing import list_snapshots
+from scanner.snapshot_rows import get_snapshot_rows
 
 
 @dataclass(frozen=True)
@@ -30,10 +30,12 @@ class SnapshotPicker(tk.Toplevel):
 
         self._picked: PickedSnapshot | None = None
 
-        fs = OSFileSystem()
-        snaps = list_snapshots(fs=fs, backup_root=vault_dir)
+        self._vault_dir = vault_dir
 
-        if not snaps:
+        fs = OSFileSystem()
+        rows = get_snapshot_rows(fs=fs, backup_root=vault_dir)
+
+        if not rows:
             messagebox.showerror(
                 "No snapshots found",
                 "No valid snapshots were found in the selected vault.",
@@ -49,8 +51,11 @@ class SnapshotPicker(tk.Toplevel):
         self._list = tk.Listbox(self, height=12)
         self._list.pack(padx=12, pady=(0, 10), fill="both", expand=True)
 
-        for s in snaps:
-            self._list.insert(tk.END, s.snapshot_id)
+        for r in rows:
+            created = r.created_at.isoformat(sep=" ", timespec="seconds") if r.created_at else "unknown time"
+            size_kb = max(1, r.total_bytes // 1024)
+            label = f"{created} — {r.file_count} files — {size_kb} KB"
+            self._list.insert(tk.END, label)
 
         self._list.selection_set(0)
 
@@ -68,7 +73,7 @@ class SnapshotPicker(tk.Toplevel):
         self.bind("<Return>", lambda _e: self._select())
 
         # keep ids accessible for selection
-        self._snap_by_id = {s.snapshot_id: s.snapshot_dir for s in snaps}
+        self._snap_by_index = {i: r.snapshot_id for i, r in enumerate(rows)}
 
     def _cancel(self) -> None:
         self._picked = None
@@ -78,8 +83,9 @@ class SnapshotPicker(tk.Toplevel):
         sel = self._list.curselection()
         if not sel:
             return
-        snap_id = str(self._list.get(sel[0]))
-        snap_dir = self._snap_by_id[snap_id]
+        idx = sel[0]
+        snap_id = self._snap_by_index[idx]
+        snap_dir = self._vault_dir / snap_id
         self._picked = PickedSnapshot(snapshot_id=snap_id, snapshot_dir=snap_dir)
         self.destroy()
 
