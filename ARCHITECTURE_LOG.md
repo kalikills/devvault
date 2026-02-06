@@ -510,4 +510,13 @@ System is now considered release-grade.
 - Packaging updated: `devvault-desktop` entry point and setuptools package list.
 
 Architecture impact:
-Core Engine remains OS-agnostic. Desktop wrapper owns vault selection/health and user interaction.
+Core Engine remains OS-agnostic. Desktop wrapper owns vault selection/health and user interaction.\n## 2026-02-06 — Desktop GUI wrapper + configurable vault path
+
+- Added `devvault_desktop/` Tkinter GUI wrapper with two primary actions: **Make Backup** and **Restore Backup**.
+- Vault directory resolution precedence:
+  1) `DEVVAULT_VAULT_DIR` env var (dev/testing override)
+  2) Desktop config `vault_dir`
+  3) Default Windows path: `D:\DevVault` (translated under WSL to `/mnt/d/DevVault`)
+- Vault is fail-closed via preflight: ensure directory exists, must be a directory, write/read/remove test file.
+- Desktop config stored atomically (tempfile + fsync + replace).
+- Runtime note: Linux/WSL requires OS package `python3-tk` (Tkinter). GUI runs under WSLg when available.
