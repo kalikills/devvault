@@ -596,3 +596,31 @@ Desktop and future clients need structured snapshot information without scanning
 - Fail-closed on malformed manifests.
 - No heavy I/O.
 - Deterministic behavior.
+
+
+## 2026-02-06 — Snapshot Index Introduced (Core)
+
+**Decision:**
+Introduced a versioned, atomic snapshot index to support scalable snapshot enumeration.
+
+**Design Properties:**
+- Stored at `<backup_root>/.devvault/snapshot_index.json`
+- Atomic write (temp file + rename)
+- Fully rebuildable from manifests
+- Optional (restore never depends on index)
+- Versioned for future migrations
+
+**Why Now:**
+Preparing DevVault to scale to large vaults without UI latency or excessive manifest reads.
+
+**Failure Model:**
+- Missing index → rebuild
+- Corrupt index → ignore and rebuild
+- Wrong version → ignore
+
+No restore path depends on index correctness.
+
+**Architectural Impact:**
+- Establishes a snapshot control-plane layer.
+- Separates enumeration performance from restore correctness.
+- Enables future features (search, filtering, retention policies) safely.
