@@ -60,3 +60,10 @@ def save_config(data: dict) -> None:
         tmp_name = tmp.name
 
     Path(tmp_name).replace(target)
+
+
+def set_vault_dir(vault_dir: str) -> None:
+    cfg = load_config()
+    cfg["vault_dir"] = vault_dir
+    save_config(cfg)
+
