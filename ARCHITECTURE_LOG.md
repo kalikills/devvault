@@ -498,3 +498,16 @@ DevVault has reached production-ready stability with:
 
 System is now considered release-grade.
 
+
+
+## 2026-02-06 — Desktop Wrapper Layer Introduced
+
+- Added `devvault_desktop` package (Tkinter GUI).
+- Fixed vault default is Windows-native: `D:\DevVault` (product intent).
+- Added WSL translation for Windows drive paths: `D:\...` -> `/mnt/d/...`.
+- Implemented vault preflight checks (create directory + write test) to fail-closed when drive is missing/unwritable.
+- Added tests for path translation + preflight behavior.
+- Packaging updated: `devvault-desktop` entry point and setuptools package list.
+
+Architecture impact:
+Core Engine remains OS-agnostic. Desktop wrapper owns vault selection/health and user interaction.
