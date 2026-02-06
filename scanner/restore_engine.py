@@ -7,6 +7,7 @@ from pathlib import Path
 from scanner.checksum import hash_path
 from scanner.manifest_integrity import verify_manifest_integrity
 from scanner.integrity_keys import load_manifest_hmac_key_from_env
+from scanner.manifest_schema import validate_crypto_stanza
 from scanner.ports.filesystem import FileSystemPort
 
 
@@ -51,6 +52,9 @@ class RestoreEngine:
         ok, _reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
         if not ok:
             raise RuntimeError("Invalid manifest: integrity check failed.")
+
+
+        validate_crypto_stanza(manifest)
 
         files = manifest.get("files")
         if not isinstance(files, list):

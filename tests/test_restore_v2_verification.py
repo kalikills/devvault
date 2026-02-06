@@ -187,3 +187,63 @@ def test_restore_accepts_hmac_manifest_when_key_present(tmp_path: Path, monkeypa
     out = dst / "hello.txt"
     assert out.exists()
     assert out.read_text(encoding="utf-8") == "hello"
+
+
+def test_restore_accepts_crypto_scheme_none(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    data_file = snapshot / "hello.txt"
+    data_file.write_text("hello", encoding="utf-8")
+
+    d = hash_path(fs, data_file, algo="sha256")
+
+    manifest = {
+        "manifest_version": 2,
+        "checksum_algo": "sha256",
+        "crypto": {"version": 1, "content": {"scheme": "none"}},
+        "files": [
+            {"path": "hello.txt", "size": data_file.stat().st_size, "type": "file", "digest_hex": d.hex}
+        ],
+    }
+    manifest = add_integrity_block(manifest)
+
+    (snapshot / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+    engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+    assert (dst / "hello.txt").read_text(encoding="utf-8") == "hello"
+
+
+def test_restore_rejects_unknown_crypto_scheme(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    data_file = snapshot / "hello.txt"
+    data_file.write_text("hello", encoding="utf-8")
+
+    d = hash_path(fs, data_file, algo="sha256")
+
+    manifest = {
+        "manifest_version": 2,
+        "checksum_algo": "sha256",
+        "crypto": {"version": 1, "content": {"scheme": "aes-gcm"}},
+        "files": [
+            {"path": "hello.txt", "size": data_file.stat().st_size, "type": "file", "digest_hex": d.hex}
+        ],
+    }
+    manifest = add_integrity_block(manifest)
+
+    (snapshot / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="unsupported crypto scheme"):
+        engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+
+    assert not dst.exists()
