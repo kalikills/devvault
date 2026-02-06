@@ -19,14 +19,13 @@ You should be able to answer:
 - Can I restore without corruption?
 
 ---
-# Safety Guarantees
 
--DevVault is engineered around strict safety invariants:
--Snapshots are never partially promoted
--Restores never overwrite existing data
--Integrity failures stop the operation immediately
--Verification is deterministic and repeatable
--If DevVault cannot guarantee safety, it refuses to proceed.
+- DevVault is engineered around strict safety invariants:
+- Snapshots are never partially promoted
+- Restores never overwrite existing data
+- Integrity failures stop the operation immediately
+- Verification is deterministic and repeatable
+- If DevVault cannot guarantee safety, it refuses to proceed.
 
 ## Core Design Principles
 

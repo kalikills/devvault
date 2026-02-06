@@ -126,153 +126,162 @@ def _p(s: str) -> _Path:
 
 
 def main() -> int:
-    args = parse_args()
+    try:
+        args = parse_args()
 
-    # -------------------------
-    # scan
-    # -------------------------
-    if args.command == "scan":
-        roots = [_p(r) for r in args.roots] if args.roots else [_p("~/dev")]
+        # -------------------------
+        # scan
+        # -------------------------
+        if args.command == "scan":
+            roots = [_p(r) for r in args.roots] if args.roots else [_p("~/dev")]
 
-        req = ScanRequest(
-            roots=roots,
-            depth=args.depth,
-            limit=args.limit,
-            top=args.top,
-            include=args.include,
-        )
+            req = ScanRequest(
+                roots=roots,
+                depth=args.depth,
+                limit=args.limit,
+                top=args.top,
+                include=args.include,
+            )
 
-        result = scan_engine(req)
+            result = scan_engine(req)
 
-        want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+            want_json = args.json or (args.output and args.output.lower().endswith(".json"))
 
-        if want_json:
-            out = format_json(result.projects, result.scanned_directories)
-        else:
-            if not args.output:
-                print("\nScanning for development projects...\n")
-
-            if not result.projects:
-                out = "No projects found."
+            if want_json:
+                out = format_json(result.projects, result.scanned_directories)
             else:
-                out = (
-                    f"Scanned {result.scanned_directories} directories.\n\n"
-                    f"{format_found(result.projects, result.skipped_directories, limit=args.limit)}"
-                )
+                if not args.output:
+                    print("\nScanning for development projects...\n")
 
-        if args.output:
-            write_output(args.output, out)
-            print(f"Wrote report to: {args.output}")
-        else:
-            print(out)
+                if not result.projects:
+                    out = "No projects found."
+                else:
+                    out = (
+                        f"Scanned {result.scanned_directories} directories.\n\n"
+                        f"{format_found(result.projects, result.skipped_directories, limit=args.limit)}"
+                    )
 
-        return 0
-
-    # -------------------------
-    # backup
-    # -------------------------
-    if args.command == "backup":
-        fs = OSFileSystem()
-        engine = BackupEngine(fs)
-
-        req = BackupRequest(
-            source_root=_p(args.source_root),
-            backup_root=_p(args.backup_root),
-            dry_run=bool(args.dry_run),
-        )
-
-        result = engine.execute(req)
-
-        payload = {
-            "backup_id": getattr(result, "backup_id", None),
-            "backup_path": str(getattr(result, "backup_path", "")),
-            "dry_run": bool(getattr(result, "dry_run", False)),
-            "started_at": getattr(result, "started_at", None).isoformat() if getattr(result, "started_at", None) else None,
-            "finished_at": getattr(result, "finished_at", None).isoformat() if getattr(result, "finished_at", None) else None,
-        }
-
-        want_json = args.json or (args.output and args.output.lower().endswith(".json"))
-        out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
-            f"Backup created: {payload['backup_id']}\n"
-            f"Path: {payload['backup_path']}\n"
-            f"Dry run: {payload['dry_run']}"
-        )
-
-        if args.output:
-            write_output(args.output, out)
-            if not want_json:
+            if args.output:
+                write_output(args.output, out)
                 print(f"Wrote report to: {args.output}")
-        else:
-            print(out)
+            else:
+                print(out)
 
-        return 0
+            return 0
 
-    # -------------------------
-    # restore
-    # -------------------------
-    if args.command == "restore":
-        fs = OSFileSystem()
-        engine = RestoreEngine(fs)
+        # -------------------------
+        # backup
+        # -------------------------
+        if args.command == "backup":
+            fs = OSFileSystem()
+            engine = BackupEngine(fs)
 
-        req = RestoreRequest(
-            snapshot_dir=_p(args.snapshot_dir),
-            destination_dir=_p(args.destination_dir),
-        )
+            req = BackupRequest(
+                source_root=_p(args.source_root),
+                backup_root=_p(args.backup_root),
+                dry_run=bool(args.dry_run),
+            )
 
-        engine.restore(req)
+            result = engine.execute(req)
 
-        payload = {
-            "status": "ok",
-            "snapshot_dir": str(req.snapshot_dir),
-            "destination_dir": str(req.destination_dir),
-        }
+            payload = {
+                "backup_id": getattr(result, "backup_id", None),
+                "backup_path": str(getattr(result, "backup_path", "")),
+                "dry_run": bool(getattr(result, "dry_run", False)),
+                "started_at": getattr(result, "started_at", None).isoformat() if getattr(result, "started_at", None) else None,
+                "finished_at": getattr(result, "finished_at", None).isoformat() if getattr(result, "finished_at", None) else None,
+            }
 
-        want_json = args.json or (args.output and args.output.lower().endswith(".json"))
-        out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
-            "Restore completed.\n"
-            f"Snapshot: {payload['snapshot_dir']}\n"
-            f"Destination: {payload['destination_dir']}"
-        )
+            want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+            out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
+                f"Backup created: {payload['backup_id']}\n"
+                f"Path: {payload['backup_path']}\n"
+                f"Dry run: {payload['dry_run']}"
+            )
 
-        if args.output:
-            write_output(args.output, out)
-            if not want_json:
-                print(f"Wrote report to: {args.output}")
-        else:
-            print(out)
+            if args.output:
+                write_output(args.output, out)
+                if not want_json:
+                    print(f"Wrote report to: {args.output}")
+            else:
+                print(out)
 
-        return 0
+            return 0
 
-    # -------------------------
-    # verify
-    # -------------------------
-    if args.command == "verify":
-        fs = OSFileSystem()
-        engine = VerifyEngine(fs)
+        # -------------------------
+        # restore
+        # -------------------------
+        if args.command == "restore":
+            fs = OSFileSystem()
+            engine = RestoreEngine(fs)
 
-        req = VerifyRequest(snapshot_dir=_p(args.snapshot_dir))
-        res = engine.verify(req)
+            req = RestoreRequest(
+                snapshot_dir=_p(args.snapshot_dir),
+                destination_dir=_p(args.destination_dir),
+            )
 
-        payload = {
-            "status": "ok",
-            "snapshot_dir": str(res.snapshot_dir),
-            "files_verified": res.files_verified,
-        }
+            engine.restore(req)
 
-        want_json = args.json or (args.output and args.output.lower().endswith(".json"))
-        out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
-            "Verify completed.\n"
-            f"Snapshot: {payload['snapshot_dir']}\n"
-            f"Files verified: {payload['files_verified']}"
-        )
+            payload = {
+                "status": "ok",
+                "snapshot_dir": str(req.snapshot_dir),
+                "destination_dir": str(req.destination_dir),
+            }
 
-        if args.output:
-            write_output(args.output, out)
-            if not want_json:
-                print(f"Wrote report to: {args.output}")
-        else:
-            print(out)
+            want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+            out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
+                "Restore completed.\n"
+                f"Snapshot: {payload['snapshot_dir']}\n"
+                f"Destination: {payload['destination_dir']}"
+            )
 
-        return 0
+            if args.output:
+                write_output(args.output, out)
+                if not want_json:
+                    print(f"Wrote report to: {args.output}")
+            else:
+                print(out)
 
-    return 2
+            return 0
+
+        # -------------------------
+        # verify
+        # -------------------------
+        if args.command == "verify":
+            fs = OSFileSystem()
+            engine = VerifyEngine(fs)
+
+            req = VerifyRequest(snapshot_dir=_p(args.snapshot_dir))
+            res = engine.verify(req)
+
+            payload = {
+                "status": "ok",
+                "snapshot_dir": str(res.snapshot_dir),
+                "files_verified": res.files_verified,
+            }
+
+            want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+            out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
+                "Verify completed.\n"
+                f"Snapshot: {payload['snapshot_dir']}\n"
+                f"Files verified: {payload['files_verified']}"
+            )
+
+            if args.output:
+                write_output(args.output, out)
+                if not want_json:
+                    print(f"Wrote report to: {args.output}")
+            else:
+                print(out)
+
+            return 0
+
+        return 2
+
+    except RuntimeError as e:
+        print(f"devvault: error: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
