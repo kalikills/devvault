@@ -520,3 +520,26 @@ Core Engine remains OS-agnostic. Desktop wrapper owns vault selection/health and
 - Vault is fail-closed via preflight: ensure directory exists, must be a directory, write/read/remove test file.
 - Desktop config stored atomically (tempfile + fsync + replace).
 - Runtime note: Linux/WSL requires OS package `python3-tk` (Tkinter). GUI runs under WSLg when available.
+
+
+## Snapshot Discovery API (Core)
+
+**Decision:**
+Added a fail-closed snapshot discovery function in core (`scanner.snapshot_listing.list_snapshots`).
+
+**Why:**
+Prevent Desktop and future clients from browsing arbitrary directories when selecting restore sources.
+
+**Rules Enforced:**
+- Snapshots must live directly under the configured backup root.
+- `.incomplete-*` directories are never exposed.
+- `manifest.json` is required for a snapshot to be selectable.
+- Results are deterministically sorted newest-first.
+
+**Architectural Impact:**
+- Establishes a single authoritative snapshot enumeration path.
+- Moves safety boundary into core instead of UI.
+- Enables safe Snapshot Picker construction.
+
+**Risk Reduction:**
+Eliminates an entire class of user-error restores from invalid directories.
