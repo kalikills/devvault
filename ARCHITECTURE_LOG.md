@@ -677,3 +677,32 @@ Optimizes restore UX while ensuring scalability as vault size grows.
 
 **Result:**
 DevVault now behaves like professional backup software rather than a developer utility.
+
+
+## 2026-02-06 — Vault Health Probe (Core)
+
+**Decision:**
+Introduced `scanner.vault_health.check_vault_health` as a fast, fail-closed operational probe.
+
+**Purpose:**
+Detect vault availability and structural issues before backup or restore operations.
+
+**Checks Performed:**
+- vault exists
+- vault is a directory
+- vault is readable
+- snapshot index is loadable OR rebuildable
+
+**Design Properties:**
+- Read-mostly (no deep traversal, no hashing)
+- Safe to call frequently
+- Restore path does not depend on probe success
+- Self-healing via index rebuild attempt
+
+**Architectural Impact:**
+- Establishes the first operational safety primitive in DevVault.
+- Enables future UX warnings, monitoring, and scheduled backup safeguards.
+- Moves the system from reactive failure handling toward proactive detection.
+
+**Design Principle:**
+Backups should fail loudly — never silently.
