@@ -388,3 +388,40 @@ This marks DevVault’s transition from backup utility → reliability system.
 - Validates snapshot integrity via existence + size matching against manifest.
 - Ensures fail-closed behavior: invalid manifests do not create/modify destination directories.
 
+
+## 2026-02 — Manifest v2 + Verified Restore
+
+### Integrity Upgrade
+DevVault now implements end-to-end backup verification.
+
+Key guarantees:
+
+- Backups emit Manifest v2
+    - manifest_version = 2
+    - checksum_algo = sha256
+    - per-file digest_hex
+
+- Restore performs atomic verification:
+    copy → hash → verify → rename
+
+- Corrupted files are NEVER promoted.
+
+- Failed restores perform best-effort temp cleanup.
+
+### Architectural Impact
+This establishes DevVault's first **data trust boundary**.
+
+The system no longer assumes backups are valid — it proves they are.
+
+### Compatibility
+- Manifest v1 remains restorable (size-validated).
+- Manifest v2 enables cryptographic verification.
+
+### Filesystem Boundary
+Checksum reads and cleanup operations remain fully enforced through FileSystemPort.
+
+No engine layer performs direct filesystem access.
+
+### Result
+DevVault transitions from "backup tool" → **verification-capable backup engine**.
+

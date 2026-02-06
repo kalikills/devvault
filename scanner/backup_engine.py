@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from scanner.checksum import hash_path
 from scanner.ports.filesystem import FileSystemPort
 
 
@@ -66,7 +67,7 @@ class BackupEngine:
             dst_root=plan.incomplete_path,
         )
 
-        # Phase 2.5 — write manifest
+        # Phase 2.5 — write manifest (v2)
         self._write_manifest(
             src_root=request.source_root,
             dst_root=plan.incomplete_path,
@@ -112,24 +113,33 @@ class BackupEngine:
         # Skip special filesystem nodes silently for now
 
     # --------------------------------------------------------
-    # Manifest
+    # Manifest (v2)
     # --------------------------------------------------------
 
     def _write_manifest(self, *, src_root: Path, dst_root: Path) -> None:
-        files = []
+        files: list[dict[str, object]] = []
+        algo = "sha256"
 
         for rel_path in self._iter_files_relative(src_root):
-            st = self._fs.stat(src_root / rel_path)
+            src = src_root / rel_path
+            st = self._fs.stat(src)
+
+            d = hash_path(self._fs, src, algo=algo)
 
             files.append(
                 {
                     "path": rel_path.as_posix(),
                     "size": st.st_size,
                     "type": "file",
+                    "digest_hex": d.hex,
                 }
             )
 
-        manifest = {"files": files}
+        manifest = {
+            "manifest_version": 2,
+            "checksum_algo": algo,
+            "files": files,
+        }
 
         manifest_path = dst_root / "manifest.json"
 

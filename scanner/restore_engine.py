@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from scanner.checksum import hash_path
 from scanner.ports.filesystem import FileSystemPort
 
 
@@ -47,8 +48,16 @@ class RestoreEngine:
         if not isinstance(files, list):
             raise RuntimeError("Invalid manifest: expected 'files' list.")
 
+        manifest_version = manifest.get("manifest_version")
+        is_v2 = manifest_version == 2
+
+        checksum_algo = manifest.get("checksum_algo") if is_v2 else None
+        if is_v2 and checksum_algo != "sha256":
+            raise RuntimeError("Invalid manifest: unsupported checksum algorithm.")
+
         # Preflight: validate paths + source file existence + size before touching destination.
-        to_copy: list[tuple[Path, Path]] = []
+        # For v2, also validate digest fields are present and plausible.
+        to_copy: list[tuple[Path, Path, int, str | None]] = []
 
         for item in files:
             rel = item.get("path")
@@ -58,6 +67,15 @@ class RestoreEngine:
                 raise RuntimeError("Invalid manifest entry: file path must be a non-empty string.")
             if not isinstance(size, int) or size < 0:
                 raise RuntimeError("Invalid manifest entry: file size must be a non-negative integer.")
+
+            digest_hex: str | None = None
+            if is_v2:
+                dh = item.get("digest_hex")
+                if not isinstance(dh, str) or dh == "":
+                    raise RuntimeError("Invalid manifest entry: missing digest.")
+                if len(dh) != 64:
+                    raise RuntimeError("Invalid manifest entry: invalid digest format.")
+                digest_hex = dh
 
             rel_path = Path(rel)
 
@@ -75,15 +93,35 @@ class RestoreEngine:
             if st.st_size != size:
                 raise RuntimeError("Snapshot is corrupt: file size mismatch.")
 
-            to_copy.append((src, dst))
+            to_copy.append((src, dst, size, digest_hex))
 
         # --- Apply restore (now we touch destination) ---
         if not self.fs.exists(req.destination_dir):
             self.fs.mkdir(req.destination_dir, parents=True)
 
-        for src, dst in to_copy:
+        for src, dst, _size, digest_hex in to_copy:
             parent = dst.parent
             if not self.fs.exists(parent):
                 self.fs.mkdir(parent, parents=True)
 
-            self.fs.copy_file(src, dst)
+            if not is_v2:
+                self.fs.copy_file(src, dst)
+                continue
+
+            tmp = Path(str(dst) + ".devvault.tmp")
+
+            self.fs.copy_file(src, tmp)
+
+            try:
+                d = hash_path(self.fs, tmp, algo="sha256")
+                if d.hex != digest_hex:
+                    raise RuntimeError("Restore verification failed: checksum mismatch.")
+                self.fs.rename(tmp, dst)
+            except Exception:
+                # Best-effort cleanup; never mask the real error.
+                if self.fs.exists(tmp):
+                    try:
+                        self.fs.unlink(tmp)
+                    except Exception:
+                        pass
+                raise
