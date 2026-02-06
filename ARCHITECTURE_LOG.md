@@ -624,3 +624,26 @@ No restore path depends on index correctness.
 - Establishes a snapshot control-plane layer.
 - Separates enumeration performance from restore correctness.
 - Enables future features (search, filtering, retention policies) safely.
+
+
+## 2026-02-06 — Snapshot Rows API (Index-Preferred Read Path)
+
+**Decision:**
+Added `scanner.snapshot_rows.get_snapshot_rows` as the single control-plane read API for snapshot enumeration.
+
+**Behavior:**
+- Prefer loading the snapshot index.
+- If missing or invalid → rebuild index atomically from manifests.
+- Never block restore on index correctness.
+
+**Why:**
+Prevents UI latency as vault size grows while maintaining fail-closed behavior.
+
+**Architectural Impact:**
+- Establishes a self-healing read path.
+- Desktop and future clients no longer need to reason about index state.
+- Control plane becomes resilient to partial failures.
+
+**Design Principle:**
+Correctness lives in the data plane (snapshots + manifests).  
+Performance lives in the control plane (index).
