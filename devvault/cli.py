@@ -1,111 +1,271 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import json
+import sys
+from pathlib import Path as _Path
 
-from scanner.engine import scan
+from devvault.formatters import format_found, format_json, write_output
+from scanner.adapters.filesystem import OSFileSystem
+from scanner.backup_engine import BackupEngine
+from scanner.engine import scan as scan_engine
 from scanner.models import ScanRequest
-from devvault.formatters import format_json, format_found, write_output
+from scanner.models.backup import BackupRequest
+from scanner.restore_engine import RestoreEngine, RestoreRequest
+from scanner.verify_engine import VerifyEngine, VerifyRequest
 
 
-def parse_args() -> argparse.Namespace:
+_COMMANDS = {"scan", "backup", "restore", "verify"}
+
+
+def _rewrite_argv_for_backcompat(argv: list[str]) -> list[str]:
+    """
+    Backwards-compatible behavior:
+      - `devvault` defaults to `devvault scan`
+      - `devvault <roots...>` becomes `devvault scan <roots...>`
+    While allowing real subcommands like `devvault backup ...`.
+    """
+    if not argv:
+        return ["scan"]
+
+    # Find first non-flag token (flags start with '-')
+    first_non_flag = None
+    for tok in argv:
+        if not tok.startswith("-"):
+            first_non_flag = tok
+            break
+
+    # If user already specified a command, do nothing.
+    if first_non_flag in _COMMANDS:
+        return argv
+
+    # Otherwise, treat as scan roots: insert 'scan' before first non-flag token.
+    out: list[str] = []
+    inserted = False
+    for tok in argv:
+        if not inserted and not tok.startswith("-"):
+            out.append("scan")
+            inserted = True
+        out.append(tok)
+
+    if not inserted:
+        # argv was all flags; default to scan
+        out.insert(0, "scan")
+    return out
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    argv = _rewrite_argv_for_backcompat(argv)
+
     parser = argparse.ArgumentParser(
         prog="devvault",
         description="DevVault — Professional project backup and risk detection CLI.",
     )
 
-    # Backwards-compatible root usage
-    parser.add_argument(
-        "roots",
-        nargs="*",
-        help="Directories to scan (default: ~/dev).",
-    )
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    parser.add_argument("--json", action="store_true", help="Output results as JSON.")
-    parser.add_argument("--depth", type=int, default=4)
-    parser.add_argument("--limit", type=int, default=30)
-    parser.add_argument(
+    # -------------------------
+    # scan
+    # -------------------------
+    scan = sub.add_parser("scan", help="Scan for development projects.")
+    scan.add_argument("roots", nargs="*", help="Directories to scan (default: ~/dev).")
+    scan.add_argument("--json", action="store_true", help="Output results as JSON.")
+    scan.add_argument("--depth", type=int, default=4)
+    scan.add_argument("--limit", type=int, default=30)
+    scan.add_argument(
         "--top",
         type=int,
         default=0,
         help="Only include the N most recently modified projects (0 = all).",
     )
-    parser.add_argument(
-        "--include",
-        type=str,
-        default="",
-        help="Only show projects matching this text.",
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default="",
-        help="Write output to a file instead of printing to stdout.",
-    )
+    scan.add_argument("--include", type=str, default="", help="Only show projects matching this text.")
+    scan.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
 
-    sub = parser.add_subparsers(dest="command")
+    # -------------------------
+    # backup
+    # -------------------------
+    backup = sub.add_parser("backup", help="Create a snapshot backup.")
+    backup.add_argument("source_root", help="Directory to back up.")
+    backup.add_argument("backup_root", help="Destination root where snapshots are created.")
+    backup.add_argument("--dry-run", action="store_true", help="Plan only; do not write any data.")
+    backup.add_argument("--json", action="store_true", help="Output results as JSON.")
+    backup.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
 
-    # Future-safe subcommand
-    scan = sub.add_parser("scan", help="Scan for development projects.")
-    scan.add_argument("roots", nargs="*", help=argparse.SUPPRESS)
-    scan.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
-    scan.add_argument("--depth", type=int, default=4, help=argparse.SUPPRESS)
-    scan.add_argument("--limit", type=int, default=30, help=argparse.SUPPRESS)
-    scan.add_argument("--top", type=int, default=0, help=argparse.SUPPRESS)
-    scan.add_argument("--include", type=str, default="", help=argparse.SUPPRESS)
-    scan.add_argument("--output", type=str, default="", help=argparse.SUPPRESS)
+    # -------------------------
+    # restore
+    # -------------------------
+    restore = sub.add_parser("restore", help="Restore a snapshot into an empty destination directory.")
+    restore.add_argument("snapshot_dir", help="Snapshot directory to restore from.")
+    restore.add_argument("destination_dir", help="Empty destination directory to restore into.")
+    restore.add_argument("--json", action="store_true", help="Output results as JSON.")
+    restore.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
 
-    args = parser.parse_args()
+    # -------------------------
+    # verify
+    # -------------------------
+    verify = sub.add_parser("verify", help="Verify a snapshot without restoring.")
+    verify.add_argument("snapshot_dir", help="Snapshot directory to verify.")
+    verify.add_argument("--json", action="store_true", help="Output results as JSON.")
+    verify.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
 
-    # Default command
-    if args.command is None:
-        args.command = "scan"
+    return parser.parse_args(argv)
 
-    return args
+
+def _p(s: str) -> _Path:
+    return _Path(s).expanduser()
 
 
 def main() -> int:
     args = parse_args()
 
-    if args.command != "scan":
-        return 2
+    # -------------------------
+    # scan
+    # -------------------------
+    if args.command == "scan":
+        roots = [_p(r) for r in args.roots] if args.roots else [_p("~/dev")]
 
-    roots = [Path(r) for r in args.roots] if args.roots else [Path("~/dev")]
+        req = ScanRequest(
+            roots=roots,
+            depth=args.depth,
+            limit=args.limit,
+            top=args.top,
+            include=args.include,
+        )
 
-    # 🚨 Critical contract:
-    # JSON must be silent except for JSON.
+        result = scan_engine(req)
 
-    req = ScanRequest(
-        roots=roots,
-        depth=args.depth,
-        limit=args.limit,
-        top=args.top,
-        include=args.include,
-    )
+        want_json = args.json or (args.output and args.output.lower().endswith(".json"))
 
-    # Phase 2: engine is pure; CLI handles printing/output
-    result = scan(req)
-
-    # Output handling lives in CLI (Phase 2)
-    want_json = args.json or (args.output and args.output.lower().endswith(".json"))
-
-    if want_json:
-        out = format_json(result.projects, result.scanned_directories)
-    else:
-        # Banner only for human console output (not JSON, not file output)
-        if not args.output:
-            print("\nScanning for development projects...\n")
-
-        if not result.projects:
-            out = "No projects found."
+        if want_json:
+            out = format_json(result.projects, result.scanned_directories)
         else:
-            out = f"Scanned {result.scanned_directories} directories.\n\n{format_found(result.projects, result.skipped_directories, limit=args.limit)}"
+            if not args.output:
+                print("\nScanning for development projects...\n")
 
-    if args.output:
-        write_output(args.output, out)
-        print(f"Wrote report to: {args.output}")
-    else:
-        # JSON contract: JSON must be silent except for JSON
-        print(out)
+            if not result.projects:
+                out = "No projects found."
+            else:
+                out = (
+                    f"Scanned {result.scanned_directories} directories.\n\n"
+                    f"{format_found(result.projects, result.skipped_directories, limit=args.limit)}"
+                )
 
-    return 0
+        if args.output:
+            write_output(args.output, out)
+            print(f"Wrote report to: {args.output}")
+        else:
+            print(out)
+
+        return 0
+
+    # -------------------------
+    # backup
+    # -------------------------
+    if args.command == "backup":
+        fs = OSFileSystem()
+        engine = BackupEngine(fs)
+
+        req = BackupRequest(
+            source_root=_p(args.source_root),
+            backup_root=_p(args.backup_root),
+            dry_run=bool(args.dry_run),
+        )
+
+        result = engine.execute(req)
+
+        payload = {
+            "backup_id": getattr(result, "backup_id", None),
+            "backup_path": str(getattr(result, "backup_path", "")),
+            "dry_run": bool(getattr(result, "dry_run", False)),
+            "started_at": getattr(result, "started_at", None).isoformat() if getattr(result, "started_at", None) else None,
+            "finished_at": getattr(result, "finished_at", None).isoformat() if getattr(result, "finished_at", None) else None,
+        }
+
+        want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+        out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
+            f"Backup created: {payload['backup_id']}\n"
+            f"Path: {payload['backup_path']}\n"
+            f"Dry run: {payload['dry_run']}"
+        )
+
+        if args.output:
+            write_output(args.output, out)
+            if not want_json:
+                print(f"Wrote report to: {args.output}")
+        else:
+            print(out)
+
+        return 0
+
+    # -------------------------
+    # restore
+    # -------------------------
+    if args.command == "restore":
+        fs = OSFileSystem()
+        engine = RestoreEngine(fs)
+
+        req = RestoreRequest(
+            snapshot_dir=_p(args.snapshot_dir),
+            destination_dir=_p(args.destination_dir),
+        )
+
+        engine.restore(req)
+
+        payload = {
+            "status": "ok",
+            "snapshot_dir": str(req.snapshot_dir),
+            "destination_dir": str(req.destination_dir),
+        }
+
+        want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+        out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
+            "Restore completed.\n"
+            f"Snapshot: {payload['snapshot_dir']}\n"
+            f"Destination: {payload['destination_dir']}"
+        )
+
+        if args.output:
+            write_output(args.output, out)
+            if not want_json:
+                print(f"Wrote report to: {args.output}")
+        else:
+            print(out)
+
+        return 0
+
+    # -------------------------
+    # verify
+    # -------------------------
+    if args.command == "verify":
+        fs = OSFileSystem()
+        engine = VerifyEngine(fs)
+
+        req = VerifyRequest(snapshot_dir=_p(args.snapshot_dir))
+        res = engine.verify(req)
+
+        payload = {
+            "status": "ok",
+            "snapshot_dir": str(res.snapshot_dir),
+            "files_verified": res.files_verified,
+        }
+
+        want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+        out = json.dumps(payload, indent=2, sort_keys=True) if want_json else (
+            "Verify completed.\n"
+            f"Snapshot: {payload['snapshot_dir']}\n"
+            f"Files verified: {payload['files_verified']}"
+        )
+
+        if args.output:
+            write_output(args.output, out)
+            if not want_json:
+                print(f"Wrote report to: {args.output}")
+        else:
+            print(out)
+
+        return 0
+
+    return 2
