@@ -1,90 +1,158 @@
 # DevVault
 
-DevVault is a fast command-line tool that scans your machine for development projects, estimates backup size, and highlights risk signals like missing version control.
+### DevVault is a safety-first backup system designed for developer workstations.
 
-Built for developers who want a quick answer to:
+DevVault is a professional CLI for scanning development projects, creating atomic snapshot backups, performing verified restores, and running offline snapshot verification.
 
-> "What do I actually need to back up?"
+Built for developers who treat their data as production infrastructure.
 
 ---
 
+## Why DevVault Exists
+
+Most backup tools optimize for convenience. DevVault optimizes for trust.
+
+You should be able to answer:
+
+- Did my backup complete safely?
+- Has anything been tampered with?
+- Can I restore without corruption?
+
+---
+# Safety Guarantees
+
+-DevVault is engineered around strict safety invariants:
+-Snapshots are never partially promoted
+-Restores never overwrite existing data
+-Integrity failures stop the operation immediately
+-Verification is deterministic and repeatable
+-If DevVault cannot guarantee safety, it refuses to proceed.
+
+## Core Design Principles
+
+- Atomic snapshot creation
+- Fail-closed verification
+- Manifest tamper detection / resistance (HMAC when configured)
+- Restore is verified and non-destructive by default
+- Operational clarity over cleverness
+
+---
+
+
 ## Features
 
-- 🔍 Automatically detects development projects  
-- 💾 Estimates total backup size (excluding git + environments)  
-- ⚠️ Flags projects without version control  
-- 📄 Export reports to text or JSON  
-- 🎯 Filter results and show most recent projects  
-- ⚡ Fast recursive scanning  
+### Project Scanning
+- Detects development projects automatically
+- Estimates backup size
+- Flags missing version control
+- JSON export for automation
+
+### Snapshot Backups
+- Timestamped snapshot IDs
+- Writes to `.incomplete-*` then atomically promotes
+- Manifest v2 with per-file SHA-256 hashes
+- Optional manifest HMAC integrity when key is configured
+
+### Verified Restore
+Restore pipeline:
+
+```
+copy → hash → promote
+```
+
+If verification fails, restore aborts and the destination is not promoted.
+
+### Snapshot Verification
+Run:
+
+```bash
+devvault verify <snapshot_dir>
+```
+
+## Verification covers:
+- Manifest integrity
+- Crypto schema
+- File existence
+- File sizes
+- SHA-256 digests
 
 ---
 
 ## Installation
 
-Clone the repo and install in editable mode:
-
 ```bash
 pip install -e .
 ```
 
-This will expose the CLI:
+Verify with:
 
 ```bash
-devvault
+devvault --help
 ```
 
 ---
 
 ## Usage
 
-### Scan your default dev folder
+Scan:
 ```bash
 devvault ~/dev
 ```
 
-### Export a report
+Backup:
 ```bash
-devvault ~/dev --output report.txt
+devvault backup ~/dev ~/backups
 ```
 
-### Write JSON for automation
+Verify:
 ```bash
-devvault ~/dev --output report.json
+devvault verify ~/backups/<snapshot-id>
 ```
 
-(JSON is automatically selected when using `.json`.)
-
-### Show only the most recent projects
+Restore:
 ```bash
-devvault ~/dev --top 5
+devvault restore ~/backups/<snapshot-id> ~/restore-target
 ```
 
-### Filter by name
-```bash
-devvault ~/dev --include scanner
-```
+Destination must be empty.
+
+This is intentionally enforced to prevent destructive restores.
+
 
 ---
 
-## Why DevVault Exists
+## Optional Security Configuration
 
-Most developers assume they know what needs backing up — until they lose something.
+Master key (preferred):
+`DEVVAULT_MASTER_KEY_HEX` — hex encoded, minimum 32 bytes.
 
-DevVault gives you a fast, high-level backup plan in seconds.
+Fallback:
+`DEVVAULT_MANIFEST_HMAC_KEY_HEX`
 
-No guesswork.
+If a snapshot requires HMAC and the key is missing, restore and verify fail closed.
 
 ---
 
 ## Requirements
+Python 3.10+
 
-- Python 3.10+
+---
+
+## Project Status
+Production-ready for developer workstation backups.
+
+Future capabilities may include:
+- Encryption
+- Compression
+- Retention policies
+- Snapshot pruning
+- Parallel hashing
+
+But DevVault already provides the most important property:
+
+> You can trust your backups.
 
 ---
 
 ## License
-
 PolyForm Strict License 1.0.0
-# devvault
-# devvault
-# devvault

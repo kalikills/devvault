@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from scanner.adapters.filesystem import OSFileSystem
 from scanner.backup_engine import BackupEngine
 from scanner.models.backup import BackupRequest
@@ -113,7 +115,6 @@ def test_backup_engine_manifest_failure_does_not_finalize(tmp_path: Path):
         dry_run=False,
     )
 
-    import pytest
     with pytest.raises(RuntimeError):
         engine.execute(req)
 
@@ -185,3 +186,21 @@ def test_backup_engine_dry_run_does_not_create_directory(tmp_path: Path):
     result = engine.execute(req)
 
     assert not result.backup_path.exists()
+
+
+def test_backup_engine_refuses_backup_root_inside_source_root(tmp_path: Path) -> None:
+    # Arrange: source tree contains the backup root -> must fail closed to prevent self-copy recursion.
+    src = tmp_path / "src"
+    backup_root = src / "backups"
+
+    src.mkdir()
+    (src / "hello.txt").write_text("hello", encoding="utf-8")
+    backup_root.mkdir()
+
+    fs = OSFileSystem()
+    engine = BackupEngine(fs)
+
+    req = BackupRequest(source_root=src, backup_root=backup_root)
+
+    with pytest.raises(RuntimeError, match="backup_root must not be inside source_root"):
+        engine.execute(req)

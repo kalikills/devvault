@@ -50,6 +50,19 @@ class BackupEngine:
         started_at = datetime.now(timezone.utc)
         plan = self.plan(request)
 
+        # Safety: refuse backup destinations inside the source tree (prevents recursive self-copy).
+        src_root = request.source_root.expanduser().resolve()
+        backup_root = request.backup_root.expanduser().resolve()
+        try:
+            backup_root.relative_to(src_root)
+        except ValueError:
+            pass
+        else:
+            raise RuntimeError(
+                "Refusing backup: backup_root must not be inside source_root (would self-copy)."
+            )
+
+
         if request.dry_run:
             finished_at = datetime.now(timezone.utc)
             return BackupResult(
