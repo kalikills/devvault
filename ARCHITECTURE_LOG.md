@@ -476,3 +476,8 @@ DevVault transitions from "backup tool" → **verification-capable backup engine
   - verifies per-file sha256 digests for v2 manifests
 - Exposed `devvault verify <snapshot_dir>` in CLI with JSON/output support.
 - This enables periodic health checks of backup sets and strengthens operational trust without performing restores.
+
+## 2026-02-06 — CLI UX: top-level help shows commands
+
+- Adjusted argv back-compat rewrite so `devvault --help` renders the top-level command list (scan/backup/restore/verify).
+- Preserved legacy behavior (`devvault` and `devvault <roots...>` still default to `scan`) while keeping standard subcommand UX.
