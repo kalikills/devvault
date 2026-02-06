@@ -13,7 +13,8 @@ dependencies = []
 
 [project.scripts]
 devvault = "devvault.__main__:main"
+devvault-desktop = "devvault_desktop.__main__:main"
 
 [tool.setuptools]
-packages = ["devvault", "scanner"]
+packages = ["devvault", "scanner", "devvault_desktop"]
 
