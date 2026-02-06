@@ -481,3 +481,20 @@ DevVault transitions from "backup tool" → **verification-capable backup engine
 
 - Adjusted argv back-compat rewrite so `devvault --help` renders the top-level command list (scan/backup/restore/verify).
 - Preserved legacy behavior (`devvault` and `devvault <roots...>` still default to `scan`) while keeping standard subcommand UX.
+
+## 2026-02-06 — DevVault v1.0 Stability Checkpoint
+
+DevVault has reached production-ready stability with:
+
+- atomic snapshot backups
+- manifest v2 with SHA-256
+- optional HMAC integrity
+- verified restore pipeline
+- offline snapshot verification
+- fail-closed runtime behavior
+- recursion protection (backup root inside source refusal)
+- hardened CLI error handling
+- full passing test suite
+
+System is now considered release-grade.
+
