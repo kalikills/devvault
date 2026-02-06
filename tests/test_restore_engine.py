@@ -57,3 +57,36 @@ def test_restore_round_trip_bytes_match(tmp_path: Path) -> None:
     manifest_paths = sorted([item["path"] for item in manifest["files"]])
     restored_paths = sorted([str(p.relative_to(restore_dest)) for p in restore_dest.rglob("*") if p.is_file()])
     assert restored_paths == manifest_paths
+
+
+def test_restore_refuses_non_empty_destination(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+
+    # --- Source ---
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "file.txt").write_text("data", encoding="utf-8")
+
+    backups_root = tmp_path / "backups"
+    backups_root.mkdir()
+
+    backup_engine = BackupEngine(fs=fs)
+    backup_req = _BackupReq(source_root=source, backup_root=backups_root, dry_run=False)
+    result = backup_engine.execute(backup_req)
+
+    # --- Create NON-empty destination ---
+    restore_dest = tmp_path / "restore_dest"
+    restore_dest.mkdir()
+    (restore_dest / "existing.txt").write_text("should block restore")
+
+    restore_engine = RestoreEngine(fs=fs)
+
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        restore_engine.restore(
+            RestoreRequest(
+                snapshot_dir=result.backup_path,
+                destination_dir=restore_dest,
+            )
+        )
