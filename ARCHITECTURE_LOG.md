@@ -425,3 +425,12 @@ No engine layer performs direct filesystem access.
 ### Result
 DevVault transitions from "backup tool" → **verification-capable backup engine**.
 
+
+## 2026-02-06 — Manifest-level integrity (tamper detection)
+
+- Added `scanner/manifest_integrity.py` providing canonical JSON hashing for manifest payloads.
+- Backup v2 now writes `manifest_integrity` (sha256 over canonical JSON excluding the integrity block).
+- Restore verifies `manifest_integrity` immediately after loading manifest; fails closed with a stable error if mismatch.
+- Added tests ensuring restore rejects tampered manifests and that failure produces no destination side effects.
+- Backward compatibility: manifests without `manifest_integrity` continue to restore (integrity is optional for older snapshots).
+- Sets foundation for future tamper resistance (HMAC/signature) and future encryption by centralizing canonicalization and verification.
