@@ -58,14 +58,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if argv is None:
         argv = sys.argv[1:]
 
-    argv = _rewrite_argv_for_backcompat(argv)
+    help_requested = any(t in ("-h", "--help") for t in argv)
+    cmd_present = any((not t.startswith("-")) and (t in _COMMANDS) for t in argv)
+    help_only = help_requested and not cmd_present
+
+    if not help_only:
+        argv = _rewrite_argv_for_backcompat(argv)
+
+    require_subcommand = not help_only
 
     parser = argparse.ArgumentParser(
         prog="devvault",
         description="DevVault — Professional project backup and risk detection CLI.",
     )
 
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=require_subcommand)
 
     # -------------------------
     # scan
