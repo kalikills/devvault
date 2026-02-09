@@ -1,11 +1,21 @@
 from pathlib import Path
 
+import os
 import pytest
 
 from scanner.adapters.filesystem import OSFileSystem
 from scanner.backup_engine import BackupEngine
 from scanner.models.backup import BackupRequest
 
+def _can_create_symlink(tmp_path):
+    try:
+        target = tmp_path / "t.txt"
+        link = tmp_path / "l.txt"
+        target.write_text("x", encoding="utf-8")
+        link.symlink_to(target)
+        return True
+    except OSError:
+        return False
 
 def test_backup_engine_creates_directory(tmp_path: Path):
     fs = OSFileSystem()
@@ -131,6 +141,10 @@ def test_backup_engine_manifest_failure_does_not_finalize(tmp_path: Path):
     assert (incomplete / "hello.txt").exists()
 
 def test_backup_engine_does_not_copy_symlinks(tmp_path: Path):
+
+    if os.name == "nt" and not _can_create_symlink(tmp_path):
+        pytest.skip("Windows requires Developer Mode or admin for symlinks.")
+        
     fs = OSFileSystem()
     engine = BackupEngine(fs)
 

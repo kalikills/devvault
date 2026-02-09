@@ -55,7 +55,7 @@ def test_restore_round_trip_bytes_match(tmp_path: Path) -> None:
     # Manifest sanity: restored files should be exactly those listed in manifest.
     manifest = json.loads((snapshot_dir / "manifest.json").read_text(encoding="utf-8"))
     manifest_paths = sorted([item["path"] for item in manifest["files"]])
-    restored_paths = sorted([str(p.relative_to(restore_dest)) for p in restore_dest.rglob("*") if p.is_file()])
+    restored_paths = sorted([p.relative_to(restore_dest).as_posix() for p in restore_dest.rglob("*") if p.is_file()])
     assert restored_paths == manifest_paths
 
 
