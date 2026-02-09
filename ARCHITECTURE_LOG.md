@@ -778,3 +778,26 @@ Every major system decision should be evaluated against one question:
 
 If unclear, bias toward the safer design.
 
+
+
+## 2026-02-09 — Windows Runtime Validation (Trustwear Milestone)
+
+**Status:** COMPLETE
+
+DevVault successfully executed the full test suite under a native Windows Python runtime.
+
+### Key Outcomes:
+- Windows virtual environment established (.venv-win)
+- Editable install verified
+- Full pytest suite executed
+- Cross-platform path normalization hardened (Path.as_posix)
+- Symlink capability handled safely via conditional test skip
+- No elevated privileges required
+- Fail-closed behavior preserved
+
+### Architectural Significance:
+This marks DevVault’s transition from a development-first environment to a Windows-valid safety system.
+
+The runtime now reflects the primary user operating system, eliminating split-environment risk and aligning test guarantees with real-world restore conditions.
+
+**Trust posture increased.**
