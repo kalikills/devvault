@@ -801,3 +801,77 @@ This marks DevVault’s transition from a development-first environment to a Win
 The runtime now reflects the primary user operating system, eliminating split-environment risk and aligning test guarantees with real-world restore conditions.
 
 **Trust posture increased.**
+
+# Architecture Checkpoint — Governance + System Stabilization
+
+## Context
+Project experienced early signs of environmental and operational entropy while expanding into dual runtime environments (WSL + PowerShell 7).
+
+Development was intentionally paused to perform a full architectural audit and stabilization pass.
+
+## Actions Taken
+
+### Governance Layer Introduced
+Added three control documents:
+
+- PROJECT_STATUS.md → operational truth snapshot  
+- SYSTEMS_LEDGER.md → environment + system memory  
+- ARCHITECTURE_LOG.md → remains the decision history  
+
+Adopted Documentation Sync Rule:
+
+Before advancing any architectural milestone:
+ALL THREE documents must reflect system reality.
+
+This prevents invisible evolution and reduces long-term rewrite risk.
+
+---
+
+### Environment Stabilization
+Confirmed runtime parity:
+
+- Native Windows / PowerShell 7 validated as PRIMARY runtime.
+- WSL retained as development and Linux-parity test environment.
+
+Operational decision:
+Never allow WSL-only behavior.
+
+Cross-platform divergence is treated as a defect.
+
+---
+
+### Repository Hygiene
+Discovered corrupted `.gitignore` entry caused by terminal write artifact.
+
+Impact:
+Silent repository corruption is a long-tail operational risk.
+
+Resolution:
+- Normalized `.gitignore`
+- Reinforced deterministic file-write rule
+- Prefer editor or controlled writes for critical artifacts
+
+---
+
+### Architectural Audit Outcome
+No structural drift detected.
+
+System remains aligned with trust-first design:
+
+- atomic snapshots
+- verified restore
+- fail-closed boundaries
+- manifest-backed artifacts
+- control plane separation
+
+DevVault continues its transition from tool → reliability system.
+
+---
+
+## Engineering Maturity Shift
+Project now operates under explicit governance rather than implicit memory.
+
+Primary goal moving forward:
+Protect system clarity as complexity increases.
+
+Stabilization passes are now considered a normal part of professional operation — not an interruption.
