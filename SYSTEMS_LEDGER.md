@@ -113,7 +113,35 @@ Users whose work **cannot be recreated.**
 Strategic Consequence:
 Safety decisions always outrank feature velocity.
 
+Core Product Definition:
 
+DevVault protects IRREPLACEABLE work.
+
+The system is not designed for bulk storage or convenience backup.
+
+It exists to ensure that serious creators never have to wonder if their livelihood is recoverable.
+
+Irreplaceable Data Domains (Design Lens):
+
+When evaluating features or expansion, prioritize data that cannot realistically be recreated, such as:
+
+- source code
+- video projects
+- RAW photography
+- music sessions
+- design files
+- writing
+- research
+- client deliverables
+
+
+Directional Rule:
+
+DevVault must never pivot toward “backup everything.”
+
+Expansion is allowed ONLY when it strengthens protection of irreplaceable work.
+
+This prevents scope explosion and preserves product clarity.
 
 ------------------------------------------------------------
 SYSTEM: Trust Architecture
