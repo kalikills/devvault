@@ -875,3 +875,35 @@ Primary goal moving forward:
 Protect system clarity as complexity increases.
 
 Stabilization passes are now considered a normal part of professional operation — not an interruption.
+
+
+# Architecture Checkpoint — Operational Hardening Phase
+
+## Strategic Decision
+DevVault is intentionally shifting from capability expansion to operational hardening.
+
+Primary objective:
+Prepare the system to be trusted in real-world conditions before introducing major new features.
+
+## Rationale
+Trust infrastructure is not defined by feature breadth, but by reliability and predictability.
+
+Premature expansion increases systemic risk and long-term rewrite probability.
+
+The project will now prioritize stability over surface area.
+
+## Hardening Pillars (Planned)
+
+- Cross-platform CI (Windows + Linux)
+- Packaging and install validation
+- Destructive scenario testing (disk full, permission errors, interrupted operations)
+- Backup format compatibility guarantees
+
+## Directional Constraint
+No major capability expansion should occur until baseline trust gates are established.
+
+## Architectural Impact
+This marks DevVault's transition from **architecturally stable** → **pre-operational reliability stage**.
+
+The system is no longer being shaped primarily by design —  
+it is being prepared for real-world trust.
