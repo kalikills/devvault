@@ -24,3 +24,10 @@ Thumbs.db
 .idea/
 .envrc
 .venv-win/
+
+# Generated chat context
+CHAT_CONTEXT_LIGHT.md
+CHAT_CONTEXT_FULL.md
+CHAT_CONTEXT.md
+
+# Script runtime artifactsscripts/*.log
