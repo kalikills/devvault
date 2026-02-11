@@ -164,3 +164,14 @@ Before introducing any feature, refactor, or architectural change — evaluate i
 4) Would a cautious engineer approve this change?
 
 If any answer is unclear → pause and re-evaluate before building.
+
+### Operational Hardening
+
+- INTERNAL RUNBOOK established (RUNBOOK.md)
+- Failure trust behavior codified
+- Incident severity model defined (SEV-1 / SEV-2 / SEV-3)
+- Evidence preservation mandated
+- Release-blocking conditions tied directly to trust invariants
+
+Status Shift:
+Project advancing from architectural reliability toward operational maturity.

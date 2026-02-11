@@ -907,3 +907,12 @@ This marks DevVault's transition from **architecturally stable** → **pre-opera
 
 The system is no longer being shaped primarily by design —  
 it is being prepared for real-world trust.
+## 2026-02-11 — Operational Hardening: Internal RUNBOOK introduced
+
+- Added RUNBOOK.md as the internal operational runbook for failure handling.
+- Codified universal failure response pattern: **REFUSE → EXPLAIN → PRESERVE → GUIDE**.
+- Introduced a simple incident severity model (SEV-1 / SEV-2 / SEV-3).
+- Added evidence-preservation policy and release-blocking conditions tied to trust invariants.
+- Runbook explicitly designed for stressed operators: clarity over cleverness; no assumption of perfect engineers.
+
+Architectural impact: DevVault now includes an operational control surface that enforces trust behavior under failure.

@@ -276,3 +276,28 @@ Purpose:
 Eliminate context rebuild.
 Reduce cognitive load.
 Prevent architectural drift from forgotten decisions.
+
+------------------------------------------------------------
+SYSTEM: Operational Runbook
+------------------------------------------------------------
+
+Current State:
+DevVault maintains an INTERNAL RUNBOOK (RUNBOOK.md) defining deterministic operator response to failure.
+
+Why:
+Trust infrastructure must behave predictably under stress.
+Runbooks prevent improvisation and reduce false positive risk during incidents.
+
+Operational Rule:
+During failure, follow the runbook sequence without deviation:
+REFUSE → EXPLAIN → PRESERVE → GUIDE
+
+Silent self-heal is prohibited.
+Evidence preservation is mandatory for SEV-1 events.
+
+Evolution:
+Project has entered the Operational Hardening phase (moving from architectural strength to operational trust enforcement).
+
+Risk Awareness:
+A runbook that is not exercised can create false confidence.
+Failure-injection validation is expected to follow.

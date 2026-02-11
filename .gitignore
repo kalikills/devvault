@@ -31,3 +31,7 @@ CHAT_CONTEXT_FULL.md
 CHAT_CONTEXT.md
 
 # Script runtime artifactsscripts/*.log
+
+# DevVault chat bootstrap logs
+scripts/*.log
+
