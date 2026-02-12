@@ -418,3 +418,40 @@ def test_restore_rejects_same_size_content_corruption(tmp_path: Path) -> None:
         engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
 
     assert not dst.exists()
+
+
+def test_restore_interrupted_copy_does_not_promote_destination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    data_file = snapshot / "big.bin"
+    data_file.write_bytes(b"a" * (1024 * 1024))  # 1MB
+
+    d = hash_path(fs, data_file, algo="sha256")
+    _write_v2_manifest(snapshot, "big.bin", size=data_file.stat().st_size, digest_hex=d.hex)
+
+    # Simulate a crash mid-copy: write some bytes, then raise.
+    original_copy = fs.copy_file
+
+    def exploding_copy(src: Path, out: Path) -> None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with src.open("rb") as r, out.open("wb") as w:
+            w.write(r.read(64 * 1024))
+            w.flush()
+        raise RuntimeError("simulated crash during copy")
+
+    monkeypatch.setattr(fs, "copy_file", exploding_copy)
+
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+
+    # Must not promote destination on failure.
+    assert not dst.exists()
+
+    # Staging dir may exist; must never be promoted silently.
+    stage = dst.parent / (dst.name + ".devvault.staging")
+    assert stage.exists()

@@ -331,6 +331,7 @@ Recent hardening:
 - Added schema-invalid manifest refusal tests (missing required `files` field) for verify + restore.
 - Added failure-injection tests ensuring verify/restore refuse when manifest references missing snapshot files.
 - Restore now stages output when destination does not exist and only promotes on full verification (prevents empty destination side-effects on refusal).
+- Added failure-injection test simulating interrupted restore copy; ensures destination is not promoted and staging remains unpromoted on failure.
 - Clarified Windows symlink test skip messaging to reflect capability limitations (non-admin session).
 
 Why:
