@@ -65,5 +65,8 @@ jobs:
           python -m venv .pkgvenv
           .\.pkgvenv\Scripts\Activate.ps1
           python -m pip install --upgrade pip
-          python -m pip install dist\*.whl
+          $whl = Get-ChildItem -Path dist -Filter *.whl | Select-Object -First 1
+
+          python -m pip install $whl.FullName
           devvault --help
+
