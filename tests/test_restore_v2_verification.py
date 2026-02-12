@@ -478,3 +478,52 @@ def test_restore_refuses_when_staging_dir_exists(tmp_path: Path) -> None:
         engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
 
     assert not dst.exists()
+
+
+class ReadOnlySnapshotFS(OSFileSystem):
+    def __init__(self, snapshot_root: Path):
+        self._snap = snapshot_root.resolve()
+
+    def _deny_if_in_snapshot(self, p: Path) -> None:
+        rp = p.resolve()
+        if rp == self._snap or self._snap in rp.parents:
+            raise RuntimeError("snapshot is read-only")
+
+    def mkdir(self, path: Path, *, parents: bool = False, exist_ok: bool = True) -> None:
+        self._deny_if_in_snapshot(path)
+        super().mkdir(path, parents=parents, exist_ok=exist_ok)
+
+    def write_text(self, path: Path, data: str, *, encoding: str = "utf-8") -> None:
+        self._deny_if_in_snapshot(path)
+        super().write_text(path, data, encoding=encoding)
+
+    def unlink(self, path: Path) -> None:
+        self._deny_if_in_snapshot(path)
+        super().unlink(path)
+
+    def rename(self, src: Path, dst: Path) -> None:
+        self._deny_if_in_snapshot(dst)
+        super().rename(src, dst)
+
+    def copy_file(self, src: Path, dst: Path) -> None:
+        self._deny_if_in_snapshot(dst)
+        super().copy_file(src, dst)
+
+
+def test_restore_never_writes_into_snapshot(tmp_path: Path) -> None:
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    data_file = snapshot / "hello.txt"
+    data_file.write_text("hello", encoding="utf-8")
+
+    fs_for_hash = OSFileSystem()
+    d = hash_path(fs_for_hash, data_file, algo="sha256")
+    _write_v2_manifest(snapshot, "hello.txt", size=data_file.stat().st_size, digest_hex=d.hex)
+
+    fs = ReadOnlySnapshotFS(snapshot)
+    engine = RestoreEngine(fs)
+
+    engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+    assert (dst / "hello.txt").read_text(encoding="utf-8") == "hello"

@@ -196,3 +196,4 @@ Project advancing from operational readiness toward trust-grade behavior.
 - Failure-injection test added to enforce interrupted-restore safety (no destination promotion on mid-copy failure)
 - Restore refuses if destination staging directory already exists (fail-closed collision handling)
 - Failure-injection test added to enforce backup finalize crash safety (rename failure leaves `.incomplete-*`, no promotion)
+- Snapshot immutability enforced: restore verified to perform zero writes inside snapshot directory
