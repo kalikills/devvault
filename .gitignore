@@ -39,3 +39,7 @@ scripts/*.log
 # local operator helpers
 Dump-DevVaultContext.ps1
 
+
+# local operator helpers
+Dump-DevVaultContext.ps1
+
