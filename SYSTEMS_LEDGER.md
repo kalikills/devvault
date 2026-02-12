@@ -328,6 +328,7 @@ Expected operational failures (e.g., invalid/corrupt manifest) refuse cleanly wi
 
 Recent hardening:
 - Added failure-injection tests ensuring malformed `manifest.json` is rejected (verify + restore) and restore creates no destination on refusal.
+- Added schema-invalid manifest refusal tests (missing required `files` field) for verify + restore.
 - Clarified Windows symlink test skip messaging to reflect capability limitations (non-admin session).
 
 Why:

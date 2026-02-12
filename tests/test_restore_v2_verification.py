@@ -344,3 +344,26 @@ def test_restore_rejects_invalid_manifest_json(tmp_path: Path) -> None:
         engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
 
     assert not dst.exists()
+
+
+def test_restore_rejects_manifest_missing_files(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    # Structurally invalid manifest (missing "files")
+    manifest = {
+        "manifest_version": 2,
+        "checksum_algo": "sha256"
+    }
+
+    import json
+    (snapshot / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+
+    assert not dst.exists()

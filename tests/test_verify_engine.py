@@ -70,3 +70,23 @@ def test_verify_engine_rejects_invalid_manifest_json(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError):
         eng.verify(VerifyRequest(snapshot_dir=snap))
+
+
+def test_verify_engine_rejects_manifest_missing_files(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    eng = VerifyEngine(fs)
+
+    snap = tmp_path / "snap"
+    snap.mkdir()
+
+    # Valid JSON but structurally invalid (missing "files")
+    manifest = {
+        "manifest_version": 2,
+        "checksum_algo": "sha256"
+    }
+
+    import json
+    (snap / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        eng.verify(VerifyRequest(snapshot_dir=snap))
