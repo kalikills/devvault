@@ -90,3 +90,28 @@ def test_verify_engine_rejects_manifest_missing_files(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError):
         eng.verify(VerifyRequest(snapshot_dir=snap))
+
+
+def test_verify_engine_rejects_missing_snapshot_file(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    eng = VerifyEngine(fs)
+
+    snap = tmp_path / "snap"
+    snap.mkdir()
+
+    manifest = {
+        "manifest_version": 2,
+        "checksum_algo": "sha256",
+        "files": [
+            {"path": "ghost.txt", "size": 5, "type": "file", "digest_hex": "0"*64}
+        ],
+    }
+
+    from scanner.manifest_integrity import add_integrity_block
+    import json
+    manifest = add_integrity_block(manifest)
+
+    (snap / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        eng.verify(VerifyRequest(snapshot_dir=snap))

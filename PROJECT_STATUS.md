@@ -191,3 +191,4 @@ Project advancing from operational readiness toward trust-grade behavior.
 - Operator-facing errors are calm and explicit under stress
 - Failure-injection tests added to enforce malformed-manifest refusal and fail-closed restore behavior
 - Failure-injection tests added to enforce schema-invalid manifest refusal (missing required fields) for verify/restore
+- Failure-injection tests added to enforce refusal when manifests reference missing snapshot files
