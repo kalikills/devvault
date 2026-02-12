@@ -5,13 +5,16 @@ on:
   pull_request:
 
 jobs:
+
   tests:
+    runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [ubuntu-latest, windows-latest]
         python: ["3.12"]
-    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,22 +22,28 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Install (editable)
+      - name: Install
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"- name: Tests
+          python -m pip install -e .
+          python -m pip install pytest
+
+      - name: Run Tests
         run: |
           python -m py_compile devvault/cli.py
           pytest -q
 
+
   package_smoke:
     needs: tests
+    runs-on: ${{ matrix.os }}
+
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [ubuntu-latest, windows-latest]
         python: ["3.12"]
-    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -42,37 +51,28 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Build distributions
+      - name: Build
         run: |
           python -m pip install --upgrade pip build
           python -m build
 
-      - name: Smoke (Linux)
+      - name: Install wheel (Linux)
         if: runner.os == 'Linux'
         run: |
           python -m venv .pkgvenv
           . .pkgvenv/bin/activate
           python -m pip install --upgrade pip
           python -m pip install dist/*.whl
-          python -c "import scanner.models; print('scanner.models OK')"
+          python -c "import scanner.models"
           devvault --help
 
-      - name: Smoke (Windows)
+      - name: Install wheel (Windows)
         if: runner.os == 'Windows'
         run: |
           python -m venv .pkgvenv
           .\.pkgvenv\Scripts\Activate.ps1
           python -m pip install --upgrade pip
-          $whl = Get-ChildItem -Path dist -Filter *.whl | Select-Object -First 1
-
+          $whl = Get-ChildItem dist -Filter *.whl | Select-Object -First 1
           python -m pip install $whl.FullName
-          python -c "import scanner.models; print('scanner.models OK')"
+          python -c "import scanner.models"
           devvault --help
-
-
-
-
-
-
-
-
