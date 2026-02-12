@@ -326,6 +326,10 @@ SYSTEM: Failure UX (Operator Calm)
 Current State:
 Expected operational failures (e.g., invalid/corrupt manifest) refuse cleanly without stack traces.
 
+Recent hardening:
+- Added failure-injection tests ensuring malformed `manifest.json` is rejected (verify + restore) and restore creates no destination on refusal.
+- Clarified Windows symlink test skip messaging to reflect capability limitations (non-admin session).
+
 Why:
 Tracebacks increase operator panic and feel like abandonment.
 Trust systems must fail closed with calm, actionable output.

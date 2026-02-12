@@ -324,3 +324,23 @@ def test_restore_rejects_aes_gcm_crypto_schema_when_missing_fields(tmp_path: Pat
         engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
 
     assert not dst.exists()
+
+
+def test_restore_rejects_invalid_manifest_json(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    # Put at least one file present so this can't be misdiagnosed as "empty snapshot".
+    (snapshot / "hello.txt").write_text("hello", encoding="utf-8")
+
+    # Malformed JSON must fail-closed and must not create destination as a side effect.
+    (snapshot / "manifest.json").write_text("{", encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+
+    assert not dst.exists()

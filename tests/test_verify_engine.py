@@ -56,3 +56,17 @@ def test_verify_engine_checksum_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="checksum mismatch"):
         eng.verify(VerifyRequest(snapshot_dir=snap))
+
+
+def test_verify_engine_rejects_invalid_manifest_json(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    eng = VerifyEngine(fs)
+
+    snap = tmp_path / "snap"
+    snap.mkdir()
+
+    # Malformed JSON must fail-closed.
+    (snap / "manifest.json").write_text("{", encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        eng.verify(VerifyRequest(snapshot_dir=snap))

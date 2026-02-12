@@ -189,3 +189,4 @@ Project advancing from operational readiness toward trust-grade behavior.
 
 - Invalid manifest JSON now triggers clean refusals for verify/restore (no tracebacks)
 - Operator-facing errors are calm and explicit under stress
+- Failure-injection tests added to enforce malformed-manifest refusal and fail-closed restore behavior

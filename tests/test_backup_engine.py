@@ -143,7 +143,7 @@ def test_backup_engine_manifest_failure_does_not_finalize(tmp_path: Path):
 def test_backup_engine_does_not_copy_symlinks(tmp_path: Path):
 
     if os.name == "nt" and not _can_create_symlink(tmp_path):
-        pytest.skip("Windows requires Developer Mode or admin for symlinks.")
+        pytest.skip("Symlink creation not permitted in this Windows session (enable Developer Mode or run as admin).")
         
     fs = OSFileSystem()
     engine = BackupEngine(fs)
