@@ -959,3 +959,13 @@ DevVault now guarantees:
 
 This materially strengthens the Trust Invariant.
 
+
+## 2026-02-12 — CI: cross-platform matrix + packaging smoke
+
+- Added GitHub Actions CI matrix for Windows + Linux.
+- Added packaging smoke job:
+  - build sdist + wheel
+  - install wheel into fresh venv
+  - validate `devvault --help`
+- Fixed Windows wheel install step to avoid PowerShell glob issues by selecting a concrete wheel path.
+

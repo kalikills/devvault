@@ -341,3 +341,19 @@ Trust systems must fail closed with calm, actionable output.
 
 Operational Rule:
 Refusals must be single-line, explicit, and non-panicking (no traceback).
+
+
+------------------------------------------------------------
+SYSTEM: CI Trust Gates
+------------------------------------------------------------
+
+Current State:
+- GitHub Actions runs a cross-platform test matrix (Windows + Linux).
+- Packaging smoke validates build + install correctness:
+  - build sdist + wheel
+  - install wheel into fresh venv
+  - smoke `devvault --help`
+
+Operational Rule:
+CI is a required trust gate. Packaging failures are release-blocking.
+

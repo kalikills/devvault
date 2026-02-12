@@ -197,3 +197,11 @@ Project advancing from operational readiness toward trust-grade behavior.
 - Restore refuses if destination staging directory already exists (fail-closed collision handling)
 - Failure-injection test added to enforce backup finalize crash safety (rename failure leaves `.incomplete-*`, no promotion)
 - Snapshot immutability enforced: restore verified to perform zero writes inside snapshot directory
+
+
+### CI trust gates established (Windows + Linux) + packaging smoke
+
+- GitHub Actions CI now runs tests on Windows and Linux.
+- Packaging smoke builds sdist + wheel, installs wheel into a fresh venv, and validates `devvault --help`.
+- This reduces “works in repo but not when installed” false confidence.
+
