@@ -916,3 +916,12 @@ it is being prepared for real-world trust.
 - Runbook explicitly designed for stressed operators: clarity over cleverness; no assumption of perfect engineers.
 
 Architectural impact: DevVault now includes an operational control surface that enforces trust behavior under failure.
+
+## 2026-02-12 — Operational Smoke Test Codified
+
+- Added SMOKE_TEST.md defining deterministic operator validation of the Trust Invariant.
+- Establishes a repeatable procedure for external-device backup → verify → restore.
+- Prevents false confidence by requiring restore validation.
+
+Architectural impact:
+Transforms recoverability from an assumption into an executable operational practice.

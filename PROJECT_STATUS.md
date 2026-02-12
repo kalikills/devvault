@@ -175,3 +175,12 @@ If any answer is unclear → pause and re-evaluate before building.
 
 Status Shift:
 Project advancing from architectural reliability toward operational maturity.
+
+### Operational Validation Introduced
+
+- External-device trust loop validated
+- Deterministic smoke test documented
+- Restore-first validation culture established
+
+Status Shift:
+Project advancing from operational readiness toward trust-grade behavior.

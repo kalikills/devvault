@@ -301,3 +301,20 @@ Project has entered the Operational Hardening phase (moving from architectural s
 Risk Awareness:
 A runbook that is not exercised can create false confidence.
 Failure-injection validation is expected to follow.
+
+------------------------------------------------------------
+SYSTEM: Operational Validation
+------------------------------------------------------------
+
+Current State:
+DevVault maintains a deterministic smoke test procedure to validate end-to-end recoverability.
+
+Why:
+Backups that are not restored are unproven.
+Operational validation reduces false-positive trust risk.
+
+Operational Rule:
+Never trust a backup that has not been restored at least once.
+
+Risk Awareness:
+Skipping restore tests is one of the most common causes of catastrophic backup failure.
