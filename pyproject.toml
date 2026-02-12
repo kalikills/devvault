@@ -11,6 +11,9 @@ requires-python = ">=3.10"
 authors = [{ name = "Braden Turner" }]
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [project.scripts]
 devvault = "devvault.__main__:main"
 devvault-desktop = "devvault_desktop.__main__:main"

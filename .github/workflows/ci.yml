@@ -22,10 +22,7 @@ jobs:
       - name: Install (editable)
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .
-          python -m pip install pytest
-
-      - name: Tests
+          python -m pip install -e ".[dev]"- name: Tests
         run: |
           python -m py_compile devvault/cli.py
           pytest -q
@@ -57,6 +54,7 @@ jobs:
           . .pkgvenv/bin/activate
           python -m pip install --upgrade pip
           python -m pip install dist/*.whl
+          python -c "import scanner.models; print('scanner.models OK')"
           devvault --help
 
       - name: Smoke (Windows)
@@ -68,6 +66,10 @@ jobs:
           $whl = Get-ChildItem -Path dist -Filter *.whl | Select-Object -First 1
 
           python -m pip install $whl.FullName
+          python -c "import scanner.models; print('scanner.models OK')"
           devvault --help
+
+
+
 
 
