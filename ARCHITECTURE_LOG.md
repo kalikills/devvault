@@ -969,3 +969,19 @@ This materially strengthens the Trust Invariant.
   - validate `devvault --help`
 - Fixed Windows wheel install step to avoid PowerShell glob issues by selecting a concrete wheel path.
 
+
+
+## 2026-02-12 — Trust Gate Established (Cross-Platform CI)
+
+DevVault now enforces an external trust gate:
+
+- GitHub Actions runs Windows + Linux matrix
+- Packaging is built (sdist + wheel)
+- Wheel is installed into a fresh virtual environment
+- CLI entrypoint validated
+
+This eliminates "works locally but fails when installed" risk.
+
+Impact:
+Strengthens the Trust Invariant by introducing independent execution validation.
+
