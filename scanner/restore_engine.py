@@ -101,7 +101,7 @@ class RestoreEngine:
                 raise RuntimeError("Invalid manifest entry: unsafe path.")
 
             src = req.snapshot_dir / rel_path
-            dst = req.destination_dir / rel_path
+            dst_rel = rel_path
 
             if not self.fs.exists(src) or not self.fs.is_file(src):
                 raise RuntimeError("Snapshot is corrupt: referenced file missing.")
@@ -110,13 +110,24 @@ class RestoreEngine:
             if st.st_size != size:
                 raise RuntimeError("Snapshot is corrupt: file size mismatch.")
 
-            to_copy.append((src, dst, size, digest_hex))
+            to_copy.append((src, dst_rel, size, digest_hex))
 
         # --- Apply restore (now we touch destination) ---
-        if not self.fs.exists(req.destination_dir):
-            self.fs.mkdir(req.destination_dir, parents=True)
+        # If destination does not exist, stage into a sibling directory and only promote on success.
+        staged = False
+        stage_dir = req.destination_dir.parent / (req.destination_dir.name + ".devvault.staging")
+        restore_root = req.destination_dir
 
-        for src, dst, _size, digest_hex in to_copy:
+        if not self.fs.exists(req.destination_dir):
+            if self.fs.exists(stage_dir):
+                raise RuntimeError("Refusing restore: staging directory already exists.")
+            self.fs.mkdir(stage_dir, parents=True)
+            restore_root = stage_dir
+            staged = True
+
+        for src, rel_path, _size, digest_hex in to_copy:
+            dst = restore_root / rel_path
+
             parent = dst.parent
             if not self.fs.exists(parent):
                 self.fs.mkdir(parent, parents=True)
@@ -126,7 +137,6 @@ class RestoreEngine:
                 continue
 
             tmp = Path(str(dst) + ".devvault.tmp")
-
             self.fs.copy_file(src, tmp)
 
             try:
@@ -135,11 +145,14 @@ class RestoreEngine:
                     raise RuntimeError("Restore verification failed: checksum mismatch.")
                 self.fs.rename(tmp, dst)
             except Exception:
-                # Best-effort cleanup; never mask the real error.
                 if self.fs.exists(tmp):
                     try:
                         self.fs.unlink(tmp)
                     except Exception:
                         pass
                 raise
+
+        # Promote staged restore only after all files verified.
+        if staged:
+            self.fs.rename(stage_dir, req.destination_dir)
 

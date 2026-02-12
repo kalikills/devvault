@@ -395,3 +395,26 @@ def test_restore_rejects_missing_snapshot_file(tmp_path: Path) -> None:
         engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
 
     assert not dst.exists()
+
+
+def test_restore_rejects_same_size_content_corruption(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    data_file = snapshot / "hello.txt"
+    data_file.write_text("hello", encoding="utf-8")
+
+    d = hash_path(fs, data_file, algo="sha256")
+    _write_v2_manifest(snapshot, "hello.txt", size=data_file.stat().st_size, digest_hex=d.hex)
+
+    # Corrupt content without changing size ("hello" -> "jello")
+    data_file.write_text("jello", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="checksum mismatch"):
+        engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+
+    assert not dst.exists()

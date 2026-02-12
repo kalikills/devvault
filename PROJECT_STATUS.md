@@ -192,3 +192,4 @@ Project advancing from operational readiness toward trust-grade behavior.
 - Failure-injection tests added to enforce malformed-manifest refusal and fail-closed restore behavior
 - Failure-injection tests added to enforce schema-invalid manifest refusal (missing required fields) for verify/restore
 - Failure-injection tests added to enforce refusal when manifests reference missing snapshot files
+- Restore stages output and promotes only after full verification when destination does not exist (no side-effects on refusal)

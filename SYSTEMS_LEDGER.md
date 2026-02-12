@@ -330,6 +330,7 @@ Recent hardening:
 - Added failure-injection tests ensuring malformed `manifest.json` is rejected (verify + restore) and restore creates no destination on refusal.
 - Added schema-invalid manifest refusal tests (missing required `files` field) for verify + restore.
 - Added failure-injection tests ensuring verify/restore refuse when manifest references missing snapshot files.
+- Restore now stages output when destination does not exist and only promotes on full verification (prevents empty destination side-effects on refusal).
 - Clarified Windows symlink test skip messaging to reflect capability limitations (non-admin session).
 
 Why:
