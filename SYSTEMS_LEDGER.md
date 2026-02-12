@@ -332,6 +332,7 @@ Recent hardening:
 - Added failure-injection tests ensuring verify/restore refuse when manifest references missing snapshot files.
 - Restore now stages output when destination does not exist and only promotes on full verification (prevents empty destination side-effects on refusal).
 - Added failure-injection test simulating interrupted restore copy; ensures destination is not promoted and staging remains unpromoted on failure.
+- Restore refuses if a staging directory already exists for the destination (prevents ambiguous promotion and silent overwrite risk).
 - Clarified Windows symlink test skip messaging to reflect capability limitations (non-admin session).
 
 Why:

@@ -455,3 +455,26 @@ def test_restore_interrupted_copy_does_not_promote_destination(tmp_path: Path, m
     # Staging dir may exist; must never be promoted silently.
     stage = dst.parent / (dst.name + ".devvault.staging")
     assert stage.exists()
+
+
+def test_restore_refuses_when_staging_dir_exists(tmp_path: Path) -> None:
+    fs = OSFileSystem()
+    engine = RestoreEngine(fs)
+
+    snapshot = tmp_path / "snapshot"
+    dst = tmp_path / "dst"
+    snapshot.mkdir()
+
+    data_file = snapshot / "hello.txt"
+    data_file.write_text("hello", encoding="utf-8")
+
+    d = hash_path(fs, data_file, algo="sha256")
+    _write_v2_manifest(snapshot, "hello.txt", size=data_file.stat().st_size, digest_hex=d.hex)
+
+    stage = dst.parent / (dst.name + ".devvault.staging")
+    stage.mkdir()
+
+    with pytest.raises(RuntimeError, match="staging directory already exists"):
+        engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
+
+    assert not dst.exists()
