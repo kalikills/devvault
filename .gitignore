@@ -35,3 +35,7 @@ CHAT_CONTEXT.md
 # DevVault chat bootstrap logs
 scripts/*.log
 
+
+# local operator helpers
+Dump-DevVaultContext.ps1
+
