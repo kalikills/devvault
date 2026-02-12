@@ -45,7 +45,12 @@ class RestoreEngine:
                 raise RuntimeError("Destination directory must be empty.")
 
         # --- Load + validate manifest (fail closed) ---
-        manifest = json.loads(self.fs.read_text(manifest_path))
+        try:
+            manifest = json.loads(self.fs.read_text(manifest_path))
+        except json.JSONDecodeError:
+            raise RuntimeError(
+                f"Snapshot manifest is invalid JSON; refusing restore. Path: {manifest_path}"
+            ) from None
 
         hmac_key = load_manifest_hmac_key_from_env()
 
@@ -137,3 +142,4 @@ class RestoreEngine:
                     except Exception:
                         pass
                 raise
+

@@ -925,3 +925,9 @@ Architectural impact: DevVault now includes an operational control surface that 
 
 Architectural impact:
 Transforms recoverability from an assumption into an executable operational practice.
+
+## 2026-02-12 — Failure UX Hardening: no tracebacks for expected refusals
+
+- Hardened manifest parsing for verify/restore: invalid JSON now raises a clean RuntimeError (fail closed).
+- CLI boundary prints calm one-line refusals for operational errors instead of Python tracebacks.
+- Preserves trust posture under stress: refusal remains explicit, predictable, and non-panicking.

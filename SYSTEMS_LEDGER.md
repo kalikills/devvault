@@ -318,3 +318,17 @@ Never trust a backup that has not been restored at least once.
 
 Risk Awareness:
 Skipping restore tests is one of the most common causes of catastrophic backup failure.
+
+------------------------------------------------------------
+SYSTEM: Failure UX (Operator Calm)
+------------------------------------------------------------
+
+Current State:
+Expected operational failures (e.g., invalid/corrupt manifest) refuse cleanly without stack traces.
+
+Why:
+Tracebacks increase operator panic and feel like abandonment.
+Trust systems must fail closed with calm, actionable output.
+
+Operational Rule:
+Refusals must be single-line, explicit, and non-panicking (no traceback).

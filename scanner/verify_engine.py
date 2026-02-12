@@ -38,7 +38,12 @@ class VerifyEngine:
         if not self.fs.exists(manifest_path):
             raise RuntimeError("Snapshot is missing manifest.json")
 
-        manifest = json.loads(self.fs.read_text(manifest_path))
+        try:
+            manifest = json.loads(self.fs.read_text(manifest_path))
+        except json.JSONDecodeError:
+            raise RuntimeError(
+                f"Snapshot manifest is invalid JSON; refusing verify. Path: {manifest_path}"
+            ) from None
 
         hmac_key = load_manifest_hmac_key_from_env()
         ok, _reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
@@ -98,3 +103,4 @@ class VerifyEngine:
             verified += 1
 
         return VerifyResult(snapshot_dir=req.snapshot_dir, files_verified=verified)
+

@@ -184,3 +184,8 @@ Project advancing from architectural reliability toward operational maturity.
 
 Status Shift:
 Project advancing from operational readiness toward trust-grade behavior.
+
+### Failure UX Hardening
+
+- Invalid manifest JSON now triggers clean refusals for verify/restore (no tracebacks)
+- Operator-facing errors are calm and explicit under stress
