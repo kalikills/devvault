@@ -931,3 +931,31 @@ Transforms recoverability from an assumption into an executable operational prac
 - Hardened manifest parsing for verify/restore: invalid JSON now raises a clean RuntimeError (fail closed).
 - CLI boundary prints calm one-line refusals for operational errors instead of Python tracebacks.
 - Preserves trust posture under stress: refusal remains explicit, predictable, and non-panicking.
+
+## 2026-02-12 — Atomic promotion model + snapshot immutability enforced
+
+**Architectural shift:** DevVault now enforces atomic promotion across BOTH backup and restore pipelines.
+
+### Backup
+- Crash during finalize rename leaves .incomplete-*
+- No partial snapshot can ever be promoted
+
+### Restore
+- Output is staged when destination does not exist
+- Promotion occurs only after full checksum verification
+- Interrupted restore cannot create a destination
+- Staging collisions fail closed
+
+### Snapshot Contract
+Snapshots are now treated as **immutable artifacts**:
+- Restore performs zero writes inside snapshot directories
+- Snapshot mutation is considered a system violation
+
+### Resulting System Property
+DevVault now guarantees:
+
+> No operation can promote unverified data  
+> and no verified snapshot can be mutated.
+
+This materially strengthens the Trust Invariant.
+
