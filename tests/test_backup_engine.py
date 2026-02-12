@@ -218,3 +218,32 @@ def test_backup_engine_refuses_backup_root_inside_source_root(tmp_path: Path) ->
 
     with pytest.raises(RuntimeError, match="backup_root must not be inside source_root"):
         engine.execute(req)
+
+
+def test_backup_engine_rename_failure_leaves_incomplete(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fs = OSFileSystem()
+    engine = BackupEngine(fs)
+
+    source = tmp_path / "src"
+    backup_root = tmp_path / "DevVault"
+    source.mkdir()
+    backup_root.mkdir()
+
+    (source / "hello.txt").write_text("hello\n", encoding="utf-8")
+
+    # Simulate crash at final promotion step.
+    def exploding_rename(src: Path, dst: Path) -> None:
+        raise RuntimeError("simulated crash during finalize rename")
+
+    monkeypatch.setattr(fs, "rename", exploding_rename)
+
+    req = BackupRequest(source_root=source, backup_root=backup_root, dry_run=False)
+
+    with pytest.raises(RuntimeError, match="finalize rename"):
+        engine.execute(req)
+
+    finalized = [p for p in backup_root.iterdir() if p.is_dir() and not p.name.startswith(".incomplete-")]
+    assert finalized == []
+
+    incompletes = [p for p in backup_root.iterdir() if p.is_dir() and p.name.startswith(".incomplete-")]
+    assert len(incompletes) == 1

@@ -195,3 +195,4 @@ Project advancing from operational readiness toward trust-grade behavior.
 - Restore stages output and promotes only after full verification when destination does not exist (no side-effects on refusal)
 - Failure-injection test added to enforce interrupted-restore safety (no destination promotion on mid-copy failure)
 - Restore refuses if destination staging directory already exists (fail-closed collision handling)
+- Failure-injection test added to enforce backup finalize crash safety (rename failure leaves `.incomplete-*`, no promotion)
