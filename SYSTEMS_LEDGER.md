@@ -357,3 +357,18 @@ Current State:
 Operational Rule:
 CI is a required trust gate. Packaging failures are release-blocking.
 
+
+### Desktop Client — ACTIVE SYSTEM
+
+Role:
+Primary human interface for DevVault trustware operations.
+
+Responsibilities:
+- Vault selection
+- Backup initiation
+- Snapshot restore
+- User safety signaling
+- Operational visibility via log surface
+
+Status: Production-path candidate (not experimental)
+

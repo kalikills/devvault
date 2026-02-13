@@ -985,3 +985,33 @@ This eliminates "works locally but fails when installed" risk.
 Impact:
 Strengthens the Trust Invariant by introducing independent execution validation.
 
+
+## 2026-02-12 — Desktop Trustware UX + Snapshot Flow Stabilized
+
+### Desktop Layer
+- Implemented centered container layout for professional UI structure.
+- Added vault icon in Windows titlebar.
+- Introduced crime-scene theme (black/yellow/red) to reinforce safety positioning.
+- Replaced progress bar with animated lock loading screen during backup/restore.
+- Log panel converted into primary status surface (removed footer-style status).
+
+### UX Hardening
+- Clarified vault terminology:
+  - "Current backup location"
+  - "System default"
+- Simplified Trustware messaging to reduce user confusion.
+- Improved Change Vault affordance with explanatory label.
+- Startup log now communicates readiness: "Vault open and ready..."
+
+### Snapshot System
+- Backup engine verified writing snapshots correctly.
+- Snapshot picker confirmed functional.
+- Desktop ↔ engine contract validated end-to-end.
+
+### Architectural Meaning
+DevVault has crossed from **tooling** into **trustware product shape**.
+
+The desktop client is now a primary interface — no longer experimental.
+
+NEXT PHASE: Desktop Hardening + Trust Signals + Pre-Release Polish.
+
