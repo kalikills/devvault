@@ -1,25 +1,40 @@
 from __future__ import annotations
 
+import shutil
+import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
+from tkinter import filedialog, messagebox
 
 from devvault_desktop.config import set_vault_dir
-from devvault_desktop.vault_gate import require_vault_ready
-from devvault_desktop.snapshot_picker import SnapshotPicker
+from devvault_desktop.preflight_dialog import PreflightDialog
 from devvault_desktop.restore_preflight import preflight_restore_destination
+from devvault_desktop.snapshot_picker import SnapshotPicker
+from devvault_desktop.vault_gate import require_vault_ready
 
 from devvault_desktop.runner import (
     DEFAULT_VAULT_WINDOWS,
+    backup,
     best_effort_fs_warning,
     get_vault_dir,
-    vault_preflight,
-    backup,
+    preflight_backup,
     restore,
+    vault_preflight,
 )
 
 SLOGAN = "DevVault is a safety system for people whose work cannot be Replaced."
 TRUSTWARE_LINE = "Trustware: if anything looks unsafe, DevVault refuses."
+
+
+def _human_bytes(n: int) -> str:
+    step = 1024.0
+    units = ["B", "KB", "MB", "GB", "TB"]
+    x = float(max(0, int(n)))
+    u = 0
+    while x >= step and u < len(units) - 1:
+        x /= step
+        u += 1
+    return f"{x:.1f} {units[u]}" if u > 0 else f"{int(x)} B"
 
 
 class DevVaultApp(tk.Tk):
@@ -31,14 +46,14 @@ class DevVaultApp(tk.Tk):
         self.FG = "#f5d000"      # caution yellow
         self.ACCENT = "#c1121f"  # warning red
         self.BTN_BG = "#141414"
-        self.LOG_BG = "#000000"  # "white box" feel
+        self.LOG_BG = "#000000"  # "terminal" feel
         self.LOG_FG = "#1FEB1C"
 
         self.title("DevVault")
         self.minsize(560, 360)
         self.configure(bg=self.BG)
 
-        # Titlebar icon (top-left) — use .ico (reliable on Windows)
+        # Titlebar icon
         try:
             ico_path = Path(__file__).with_name("assets") / "vault.ico"
             if ico_path.exists():
@@ -46,7 +61,7 @@ class DevVaultApp(tk.Tk):
         except Exception:
             pass
 
-        # ---------- ROOT CONTAINER (centers the entire UI) ----------
+        # ---------- ROOT CONTAINER ----------
         container = tk.Frame(self, bg=self.BG)
         container.pack(expand=True)
 
@@ -147,7 +162,6 @@ class DevVaultApp(tk.Tk):
         )
         self.restore_btn.grid(row=0, column=1, padx=8)
 
-        # ---------- Vault Button ----------
         settings_frame = tk.Frame(container, bg=self.BG)
         settings_frame.pack(pady=(0, 10))
 
@@ -172,7 +186,7 @@ class DevVaultApp(tk.Tk):
             bg=self.BG,
         ).pack(pady=(4, 0))
 
-        # ---------- Loading overlay (hidden unless busy) ----------
+        # ---------- Loading overlay ----------
         self._loading_running = False
         self._loading_phase = 0
 
@@ -181,7 +195,6 @@ class DevVaultApp(tk.Tk):
         self.loading_dots_var = tk.StringVar(value="")
 
         self.loading_overlay = tk.Frame(self, bg=self.BG)
-
         overlay_card = tk.Frame(self.loading_overlay, bg=self.BG)
         overlay_card.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -209,7 +222,6 @@ class DevVaultApp(tk.Tk):
             bg=self.BG,
         ).pack()
 
-
         # ---------- Log ----------
         self.log = tk.Text(
             container,
@@ -221,14 +233,15 @@ class DevVaultApp(tk.Tk):
         )
         self.log.pack(padx=24, pady=(8, 12), fill="both", expand=True)
 
-        # Initialize label text after widgets exist
         self._refresh_vault_ui()
-
-        # Startup log (no slogan repeat)
         self._log("Welcome to DevVault.")
         self._log(TRUSTWARE_LINE)
         self._log("Choose an action: Make Backup or Restore Backup.")
         self._log("Vault open and ready....")
+
+    # ------------------------------------------------------------
+    # UI helpers
+    # ------------------------------------------------------------
 
     def _log(self, msg: str) -> None:
         self.log.configure(state="normal")
@@ -255,7 +268,6 @@ class DevVaultApp(tk.Tk):
         if not getattr(self, "_loading_running", False):
             return
 
-        # Lock animation: 🔓 → 🔒 → 🔒 (shake dots) → 🔓 ...
         frames = ["🔓", "🔒", "🔒", "🔒"]
         dots = ["", ".", "..", "..."]
         icon = frames[self._loading_phase % len(frames)]
@@ -267,7 +279,6 @@ class DevVaultApp(tk.Tk):
         self._loading_phase += 1
         self.after(220, self._tick_loading)
 
-
     def _set_busy(self, busy: bool, status: str | None = None) -> None:
         state = "disabled" if busy else "normal"
         self.backup_btn.configure(state=state)
@@ -277,7 +288,6 @@ class DevVaultApp(tk.Tk):
         if status:
             self._set_status(status)
 
-        # Loading screen only while busy
         try:
             if busy:
                 self._show_loading("Securing changes…")
@@ -288,10 +298,8 @@ class DevVaultApp(tk.Tk):
 
         self.update_idletasks()
 
-
     def _refresh_vault_ui(self) -> None:
         vault_resolved = get_vault_dir()
-
         self.vault_label.configure(text=f"Current backup location: {vault_resolved}")
         self.vault_default_label.configure(text=f"System default: {DEFAULT_VAULT_WINDOWS}")
 
@@ -309,13 +317,16 @@ class DevVaultApp(tk.Tk):
             return False
         return True
 
+    # ------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------
+
     def on_change_vault(self) -> None:
         chosen = filedialog.askdirectory(title="Select vault folder (backup destination)")
         if not chosen:
             return
 
         chosen_path = Path(chosen)
-
         reason = vault_preflight(chosen_path)
         if reason is not None:
             messagebox.showerror(
@@ -344,24 +355,152 @@ class DevVaultApp(tk.Tk):
         if not self._require_healthy_vault():
             return
 
-        self._set_busy(True, status=f"Backup started: {src_path}")
-        try:
-            self._refresh_vault_ui()
-            payload = backup(source_dir=src_path)
-            backup_path = payload.get("backup_path", "")
-            self._set_status(f"Backup complete: {backup_path}")
-            messagebox.showinfo("Backup Complete", f"Backup created:\n{backup_path}")
-        except Exception as e:
-            self._set_status(f"ERROR (backup): {e}")
-            messagebox.showerror("Backup Failed", str(e))
-        finally:
-            self._set_busy(False, status="Vault open and ready....")
+        self._set_busy(True, status=f"Preflight scanning: {src_path}")
+
+        def run_backup_worker() -> None:
+            try:
+                payload = backup(source_dir=src_path)
+                backup_path = payload.get("backup_path", "")
+
+                def done() -> None:
+                    self._set_status(f"Backup complete: {backup_path}")
+                    messagebox.showinfo("Backup Complete", f"Backup created:\n{backup_path}")
+                    self._set_busy(False, status="Vault open and ready....")
+
+                self.after(0, done)
+
+            except Exception as e:
+                msg = str(e)
+
+                def fail(msg: str = msg) -> None:
+                    self._set_status(f"ERROR (backup): {msg}")
+                    messagebox.showerror("Backup Failed", msg)
+                    self._set_busy(False, status="Vault open and ready....")
+
+                self.after(0, fail)
+
+        def preflight_worker() -> None:
+            try:
+                rep = preflight_backup(source_dir=src_path)
+            except Exception as e:
+                msg = str(e)
+
+                def fail(msg: str = msg) -> None:
+                    self._set_status(f"ERROR (preflight): {msg}")
+                    messagebox.showerror("Preflight Failed", msg)
+                    self._set_busy(False, status="Vault open and ready....")
+
+                self.after(0, fail)
+                return
+
+            def confirm_and_start() -> None:
+                try:
+                    unread = rep.get("unreadable", {}) or {}
+                    unread_total = (
+                        int(unread.get("permission_denied", 0))
+                        + int(unread.get("locked_or_in_use", 0))
+                        + int(unread.get("not_found", 0))
+                        + int(unread.get("other_io", 0))
+                    )
+
+                    src_root_s = str(rep.get("source_root", ""))
+                    vault_root_s = str(rep.get("backup_root", ""))
+                    total_bytes = int(rep.get("total_bytes", 0) or 0)
+                    file_count = int(rep.get("file_count", 0) or 0)
+                    skipped_symlinks = int(rep.get("skipped_symlinks", 0) or 0)
+
+                    # Space check: STRICT (fail-closed). If we cannot prove enough space, refuse.
+                    try:
+                        usage = shutil.disk_usage(vault_root_s)
+                        free_b = int(usage.free)
+                    except Exception as e:
+                        msg = f"Refusing backup: could not verify free space for vault.\n\nVault: {vault_root_s}\nReason: {e}"
+                        self._set_status("Refused: vault free space could not be verified.")
+                        messagebox.showerror("Preflight Refused", msg)
+                        self._set_busy(False, status="Vault open and ready....")
+                        return
+
+                    if free_b < total_bytes:
+
+                        msg = (
+                            "Refusing backup: insufficient free space on vault.\n\n"
+                            f"Vault: {vault_root_s}\n"
+                            f"Required: {_human_bytes(total_bytes)}\n"
+                            f"Free:     {_human_bytes(free_b)}"
+                        )
+                        self._set_status("Refused: insufficient vault free space.")
+                        messagebox.showerror("Preflight Refused", msg)
+                        self._set_busy(False, status="Vault open and ready....")
+                        return
+
+                    space_line = f"Destination free space OK: {_human_bytes(free_b)} free."
+
+
+                    # Banner (high-signal summary)
+                    banner_lines: list[str] = [
+                        "Verify Backup Plan",
+                        f"Source: {src_root_s}",
+                        f"Vault:  {vault_root_s}",
+                        space_line,
+                    ]
+
+                    # Details (monospace block)
+                    msg_lines = [
+                        "FILES",
+                        f"  Count: {file_count}",
+                        f"  Size:  {_human_bytes(total_bytes)}",
+                        "",
+                        "RISK SURFACE",
+                        f"  Skipped symlinks: {skipped_symlinks}",
+                        f"  Unreadable paths: {unread_total}",
+                    ]
+
+                    samples = rep.get("unreadable_samples", []) or []
+                    if unread_total > 0 and samples:
+                        msg_lines.append("")
+                        msg_lines.append("UNREADABLE SAMPLES")
+                        for s in samples[:5]:
+                            msg_lines.append(f"  - {s}")
+
+                    warnings = rep.get("warnings", []) or []
+                    if warnings:
+                        msg_lines.append("")
+                        msg_lines.append("WARNINGS")
+                        for w in warnings[:3]:
+                            msg_lines.append(f"  - {w}")
+
+                    dlg = PreflightDialog(
+                        self,
+                        title="Backup Preflight",
+                        banner_lines=banner_lines,
+                        detail_lines=msg_lines,
+                    )
+                    ok = dlg.show()
+                    if not ok:
+                        self._set_status("Backup cancelled after preflight.")
+                        self._set_busy(False, status="Vault open and ready....")
+                        return
+
+                    # Start backup off-thread
+                    self._refresh_vault_ui()
+                    self._set_busy(True, status=f"Backup started: {src_path}")
+                    threading.Thread(target=run_backup_worker, daemon=True).start()
+
+                except Exception as e:
+                    msg = str(e)
+                    self._set_status(f"ERROR (preflight-ui): {msg}")
+                    messagebox.showerror("Preflight Failed", msg)
+                    self._set_busy(False, status="Vault open and ready....")
+
+            self.after(0, confirm_and_start)
+
+        threading.Thread(target=preflight_worker, daemon=True).start()
 
     def on_restore(self) -> None:
-        vault_dir = get_vault_dir()
-
         if not self._require_healthy_vault():
             return
+
+        vault_dir = get_vault_dir()
 
         picker = SnapshotPicker(self, vault_dir=vault_dir)
         picked = picker.pick()
@@ -381,16 +520,29 @@ class DevVaultApp(tk.Tk):
             return
 
         self._set_busy(True, status=f"Restore started: {snap_path} → {dst_path}")
-        try:
-            self._refresh_vault_ui()
-            _payload = restore(snapshot_dir=snap_path, destination_dir=dst_path)
-            self._set_status("Restore complete.")
-            messagebox.showinfo("Restore Complete", "Restore completed successfully.")
-        except Exception as e:
-            self._set_status(f"ERROR (restore): {e}")
-            messagebox.showerror("Restore Failed", str(e))
-        finally:
-            self._set_busy(False, status="Vault open and ready....")
+
+        def restore_worker() -> None:
+            try:
+                _payload = restore(snapshot_dir=snap_path, destination_dir=dst_path)
+
+                def done() -> None:
+                    self._set_status("Restore complete.")
+                    messagebox.showinfo("Restore Complete", "Restore completed successfully.")
+                    self._set_busy(False, status="Vault open and ready....")
+
+                self.after(0, done)
+
+            except Exception as e:
+                msg = str(e)
+
+                def fail(msg: str = msg) -> None:
+                    self._set_status(f"ERROR (restore): {msg}")
+                    messagebox.showerror("Restore Failed", msg)
+                    self._set_busy(False, status="Vault open and ready....")
+
+                self.after(0, fail)
+
+        threading.Thread(target=restore_worker, daemon=True).start()
 
 
 def main() -> int:

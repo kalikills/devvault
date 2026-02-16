@@ -10,6 +10,7 @@ from scanner.checksum import hash_path
 from scanner.manifest_integrity import add_integrity_block
 from scanner.integrity_keys import load_manifest_hmac_key_from_env
 from scanner.ports.filesystem import FileSystemPort
+from scanner.models.backup import BackupRequest, PreflightReport
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,112 @@ class BackupResult:
 class BackupEngine:
     def __init__(self, fs: FileSystemPort):
         self._fs = fs
+
+    def preflight(self, request: BackupRequest) -> PreflightReport:
+        """
+        Best-effort preflight summary for a backup.
+
+        Notes:
+        - Uses the SAME traversal + symlink-skip policy as backup/manifest generation.
+        - Does not open/read file contents (stats only). Backup may still refuse later
+          if a file becomes unreadable during copy/hash. That's correct fail-closed behavior.
+        """
+        src_root = request.source_root.expanduser().resolve()
+        backup_root = request.backup_root.expanduser().resolve()
+
+        file_count = 0
+        total_bytes = 0
+        skipped_symlinks = 0
+
+        perm_denied = 0
+        locked = 0
+        not_found = 0
+        other_io = 0
+
+        samples: list[str] = []
+        SAMPLE_CAP = 25
+
+        def record_unreadable(path, exc: BaseException) -> None:
+            nonlocal perm_denied, locked, not_found, other_io
+            # PermissionError on Windows can indicate both ACL denial and sharing violations.
+            if isinstance(exc, PermissionError):
+                winerr = getattr(exc, "winerror", None)
+                # Windows sharing violation / lock is commonly 32 or 33.
+                if winerr in (32, 33):
+                    locked += 1
+                else:
+                    perm_denied += 1
+            elif isinstance(exc, FileNotFoundError):
+                not_found += 1
+            else:
+                other_io += 1
+
+            if len(samples) < SAMPLE_CAP:
+                try:
+                    samples.append(str(path))
+                except Exception:
+                    samples.append("<unprintable-path>")
+
+        def walk(node):
+            nonlocal file_count, total_bytes, skipped_symlinks
+
+            # Policy: skip symlinks entirely (consistent with backup)
+            try:
+                if self._fs.is_symlink(node):
+                    skipped_symlinks += 1
+                    return
+            except Exception as e:
+                record_unreadable(node, e)
+                return
+
+            try:
+                if self._fs.is_dir(node):
+                    for child in self._fs.iterdir(node):
+                        walk(child)
+                    return
+            except Exception as e:
+                record_unreadable(node, e)
+                return
+
+            try:
+                if self._fs.is_file(node):
+                    try:
+                        st = self._fs.stat(node)
+                        file_count += 1
+                        total_bytes += int(getattr(st, "st_size", 0) or 0)
+                    except Exception as e:
+                        record_unreadable(node, e)
+                    return
+            except Exception as e:
+                record_unreadable(node, e)
+                return
+
+            # Special nodes: ignore silently (consistent with backup)
+            return
+
+        # Traverse from root
+        walk(src_root)
+
+        warnings: list[str] = []
+        if skipped_symlinks > 0:
+            warnings.append("Some symlinks were skipped by policy (safety).")
+        if (perm_denied + locked + not_found + other_io) > 0:
+            warnings.append("Some paths could not be read/statted during preflight; backup may refuse later if instability persists.")
+
+        return PreflightReport(
+            source_root=src_root,
+            backup_root=backup_root,
+            file_count=file_count,
+            total_bytes=total_bytes,
+            skipped_symlinks=skipped_symlinks,
+            unreadable_permission_denied=perm_denied,
+            unreadable_locked_or_in_use=locked,
+            unreadable_not_found=not_found,
+            unreadable_other_io=other_io,
+            unreadable_samples=tuple(samples),
+            warnings=tuple(warnings),
+        )
+
 
     def plan(self, request) -> BackupPlan:
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

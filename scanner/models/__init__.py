@@ -13,4 +13,4 @@ class ScanRequest:
     include: str = ""
 
 # Backup models
-from .backup import BackupRequest, BackupResult
+from .backup import BackupRequest, BackupResult, PreflightReport

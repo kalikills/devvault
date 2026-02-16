@@ -148,6 +148,19 @@ def best_effort_fs_warning(vault_dir: Path) -> Optional[str]:
         return None
 
 
+
+def preflight_backup(*, source_dir: Path) -> dict:
+    vault = get_vault_dir()
+    reason = vault_preflight(vault)
+    if reason is not None:
+        raise RuntimeError(f"Vault not available: {vault} ({reason})")
+
+    res = _run_devvault(["preflight", str(source_dir), str(vault), "--json"])
+    if res.returncode != 0:
+        raise RuntimeError(res.stderr.strip() or "preflight failed")
+    return json.loads(res.stdout)
+
+
 def backup(*, source_dir: Path) -> dict:
     vault = get_vault_dir()
     reason = vault_preflight(vault)

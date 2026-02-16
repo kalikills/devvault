@@ -32,6 +32,35 @@ class BackupRequest:
 
 
 @dataclass(frozen=True)
+class PreflightReport:
+    """
+    Backup preflight summary.
+
+    Purpose:
+    - Provide operator-visible intent confirmation before running backup.
+    - Surface safety-relevant exclusions/refusals (e.g. symlinks) and unreadable paths.
+    """
+    source_root: Path
+    backup_root: Path
+
+    file_count: int
+    total_bytes: int
+
+    # Policy-based skips (currently: symlinks)
+    skipped_symlinks: int = 0
+
+    # Best-effort classification of paths we could not stat/read
+    unreadable_permission_denied: int = 0
+    unreadable_locked_or_in_use: int = 0
+    unreadable_not_found: int = 0
+    unreadable_other_io: int = 0
+
+    # Keep samples bounded (operator visibility without huge payloads)
+    unreadable_samples: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class BackupResult:
     """
     Output from a backup operation.

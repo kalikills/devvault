@@ -15,9 +15,7 @@ from scanner.restore_engine import RestoreEngine, RestoreRequest
 from scanner.verify_engine import VerifyEngine, VerifyRequest
 
 
-_COMMANDS = {"scan", "backup", "restore", "verify"}
-
-
+_COMMANDS = {"scan", "backup", "restore", "verify", "preflight"}
 def _rewrite_argv_for_backcompat(argv: list[str]) -> list[str]:
     """
     Backwards-compatible behavior:
@@ -101,6 +99,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     backup.add_argument("--json", action="store_true", help="Output results as JSON.")
     backup.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
 
+
+    # -------------------------
+    # preflight
+    # -------------------------
+    preflight = sub.add_parser("preflight", help="Estimate backup contents (files/bytes) and surface unreadable/skipped paths.")
+    preflight.add_argument("source_root", help="Directory to preflight.")
+    preflight.add_argument("backup_root", help="Destination vault root (used for display / policy context).")
+    preflight.add_argument("--json", action="store_true", help="Output results as JSON.")
+    preflight.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
+
     # -------------------------
     # restore
     # -------------------------
@@ -169,7 +177,69 @@ def main() -> int:
 
             return 0
 
+        
         # -------------------------
+        # preflight
+        # -------------------------
+        if args.command == "preflight":
+            fs = OSFileSystem()
+            engine = BackupEngine(fs)
+
+            req = BackupRequest(
+                source_root=_p(args.source_root),
+                backup_root=_p(args.backup_root),
+                dry_run=True,
+            )
+
+            rep = engine.preflight(req)
+
+            payload = {
+                "source_root": str(rep.source_root),
+                "backup_root": str(rep.backup_root),
+                "file_count": rep.file_count,
+                "total_bytes": rep.total_bytes,
+                "skipped_symlinks": rep.skipped_symlinks,
+                "unreadable": {
+                    "permission_denied": rep.unreadable_permission_denied,
+                    "locked_or_in_use": rep.unreadable_locked_or_in_use,
+                    "not_found": rep.unreadable_not_found,
+                    "other_io": rep.unreadable_other_io,
+                },
+                "unreadable_samples": list(rep.unreadable_samples),
+                "warnings": list(rep.warnings),
+            }
+
+            want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+            if want_json:
+                out = json.dumps(payload, indent=2, sort_keys=True)
+            else:
+                unread_total = (
+                    rep.unreadable_permission_denied
+                    + rep.unreadable_locked_or_in_use
+                    + rep.unreadable_not_found
+                    + rep.unreadable_other_io
+                )
+                out = (
+                    f"Source: {payload['source_root']}\n"
+                    f"Vault:  {payload['backup_root']}\n"
+                    f"Files:  {rep.file_count}\n"
+                    f"Bytes:  {rep.total_bytes}\n"
+                    f"Skipped symlinks: {rep.skipped_symlinks}\n"
+                    f"Unreadable: {unread_total}\n"
+                )
+                if rep.warnings:
+                    out += "\nWarnings:\n" + "\n".join(f"- {w}" for w in rep.warnings)
+
+            if args.output:
+                write_output(args.output, out)
+                if not want_json:
+                    print(f"Wrote report to: {args.output}")
+            else:
+                print(out)
+
+            return 0
+
+# -------------------------
         # backup
         # -------------------------
         if args.command == "backup":
