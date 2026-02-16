@@ -1,374 +1,103 @@
 # DEVVAULT — SYSTEMS LEDGER
 
 Purpose:
-Maintain a fast, operational memory of the systems, environments, and directional decisions shaping DevVault.
+Maintain a high-signal operational memory of the systems and decisions shaping DevVault.
 
-This document prevents “invisible evolution” — one of the primary causes of architectural drift.
+This document reflects **current reality**, not historical evolution.
 
+---
 
-------------------------------------------------------------
-SYSTEM: Runtime Environment Strategy
-------------------------------------------------------------
+## SYSTEM: Runtime Strategy
+Primary runtime is native Windows (PowerShell 7).
 
-Current State:
-- Native Windows (PowerShell 7) is the PRIMARY runtime.
-- WSL is used as a development and Linux-parity test lab.
-
-Why:
-Backup software must behave predictably on the user’s real OS.
-WSL is not the customer environment — Windows is.
+WSL exists only for parity testing — never as the customer environment.
 
 Operational Rule:
-Never allow WSL-only behavior.
+If behavior differs across platforms, treat it as a defect.
 
-If something works in WSL but not Windows → treat it as a defect.
+---
 
+## SYSTEM: Python Environment
+Project-local virtual environments only.
 
-Evolution:
-- Early development leaned heavily on WSL.
-- Project intentionally shifted toward Windows-first execution to avoid hidden platform risk.
+- .venv-win → Windows  
+- .venv → WSL  
 
-
-Risk Awareness:
-Cross-platform filesystem behavior must always be assumed to differ.
-
-
-
-------------------------------------------------------------
-SYSTEM: Python Environment Strategy
-------------------------------------------------------------
-
-Current State:
-- Project-local virtual environments.
-    - `.venv` → WSL
-    - `.venv-win` → Windows
-
-Why:
-Prevents global interpreter contamination.
-Ensures reproducibility.
-
-
-Operational Rule:
 Never rely on system Python.
 
+Interpreter ambiguity is deployment risk.
 
-Evolution:
-- direnv was used in early workflow.
-- PowerShell 7 does not rely on direnv.
-- Explicit activation is now preferred for clarity.
+---
 
+## SYSTEM: Repository Placement
+Canonical location:
 
-Risk Awareness:
-Interpreter ambiguity is a deployment risk.
-
-
-
-------------------------------------------------------------
-SYSTEM: Repository Location
-------------------------------------------------------------
-
-Current State:
 C:\dev\devvault
 
-Why:
-Professional projects should not live inside user-profile directories.
+Repository placement is treated as infrastructure to prevent permission drift, path instability, and recursive backup hazards.
 
-This reduces:
-- permission weirdness
-- path instability
-- OneDrive interference
-- backup recursion accidents
+---
 
+## SYSTEM: Trust Architecture
 
-Operational Rule:
-Treat repository placement as infrastructure — not convenience.
+DevVault is engineered to prevent false positives.
 
+Core enforcement now includes:
 
+- atomic snapshot finalize  
+- manifest verification  
+- restore preflight  
+- vault health gating  
+- fail-closed desktop behavior  
+- **capacity fail-closed enforcement**
 
-------------------------------------------------------------
-SYSTEM: Product Direction
-------------------------------------------------------------
+Backup execution is blocked unless sufficient vault space is verified.
 
-Current State:
-DevVault is positioned as **Trust Infrastructure**.
+Disk capacity is no longer an operator concern — it is a system invariant.
 
-Not a hobby backup script.
-Not convenience tooling.
+---
 
-
-Primary Personas (Launch Direction):
-
-- Developers
-- Content creators
-- YouTubers
-- Photographers
-- Designers
-- Serious digital professionals
-
-
-Core Trait:
-Users whose work **cannot be recreated.**
-
-
-Strategic Consequence:
-Safety decisions always outrank feature velocity.
-
-Core Product Definition:
-
-DevVault protects IRREPLACEABLE work.
-
-The system is not designed for bulk storage or convenience backup.
-
-It exists to ensure that serious creators never have to wonder if their livelihood is recoverable.
-
-Irreplaceable Data Domains (Design Lens):
-
-When evaluating features or expansion, prioritize data that cannot realistically be recreated, such as:
-
-- source code
-- video projects
-- RAW photography
-- music sessions
-- design files
-- writing
-- research
-- client deliverables
-
-
-Directional Rule:
-
-DevVault must never pivot toward “backup everything.”
-
-Expansion is allowed ONLY when it strengthens protection of irreplaceable work.
-
-This prevents scope explosion and preserves product clarity.
-
-------------------------------------------------------------
-SYSTEM: Trust Architecture
-------------------------------------------------------------
-
-Current State:
-DevVault is engineered around preventing false positives.
-
-Key protections include:
-
-- atomic snapshot finalize
-- manifest verification
-- cryptographic hashing
-- restore preflight
-- fail-closed behavior
-- vault health gating
-
-
-Operational Rule:
-When uncertain → refuse the operation.
-
-
-
-------------------------------------------------------------
-SYSTEM: Desktop Layer
-------------------------------------------------------------
-
-Current State:
-Desktop wrapper exists as a UX safety layer.
-
-Core remains OS-agnostic.
-
-
-Responsibility Split:
-
-Core:
-- truth
-- verification
-- invariants
-
-Desktop:
-- guardrails
-- user flow safety
-- path refusal
-
-
-Architectural Rule:
-UI must never weaken safety boundaries.
-
-
-
-------------------------------------------------------------
-SYSTEM: Snapshot Control Plane
-------------------------------------------------------------
-
-Current State:
-Versioned snapshot index exists.
-
-Important Property:
-Restore correctness NEVER depends on the index.
-
-Index is rebuildable.
-
-
-Why This Matters:
-Prevents metadata corruption from becoming data loss.
-
-
-
-------------------------------------------------------------
-SYSTEM: Engineering Operating Model
-------------------------------------------------------------
-
-Documentation Sync Rule:
-
-Before starting any new architectural step or major capability:
-
-- Update ARCHITECTURE_LOG.md
-- Update PROJECT_STATUS.md
-- Update SYSTEMS_LEDGER.md
-
-No forward progress on stale system memory.
-
-Current State:
-Project is run like a production system — not an experiment.
-
-Active Principles:
-
-- Safety over speed
-- Strict over permissive
-- Fail closed
-- Tests before risk
-- Deterministic file writes
-- Architectural checkpoints
-- No silent assumptions
-
-
-Meta Rule:
-If the system starts to feel chaotic → stop building and stabilize.
-
-
-------------------------------------------------------------
-KNOWN EVOLUTIONS TO CAPTURE (Add As They Occur)
-------------------------------------------------------------
-
-When ANY of these change, update this ledger immediately:
-
-- runtime strategy
-- storage format
-- crypto model
-- verification rules
-- restore behavior
-- snapshot structure
-- product direction
-- supported platforms
-
-
-
-This document is a CONTROL SURFACE for system awareness.
-
-------------------------------------------------------------
-SYSTEM: Chat Bootstrap Protocol
-------------------------------------------------------------
-
-At the start of any new chat session:
-
-1. Provide PROJECT_STATUS.md
-2. Provide SYSTEMS_LEDGER.md
-3. Reference ARCHITECTURE_LOG.md if architectural context is required.
-
-Purpose:
-Eliminate context rebuild.
-Reduce cognitive load.
-Prevent architectural drift from forgotten decisions.
-
-------------------------------------------------------------
-SYSTEM: Operational Runbook
-------------------------------------------------------------
-
-Current State:
-DevVault maintains an INTERNAL RUNBOOK (RUNBOOK.md) defining deterministic operator response to failure.
-
-Why:
-Trust infrastructure must behave predictably under stress.
-Runbooks prevent improvisation and reduce false positive risk during incidents.
-
-Operational Rule:
-During failure, follow the runbook sequence without deviation:
-REFUSE → EXPLAIN → PRESERVE → GUIDE
-
-Silent self-heal is prohibited.
-Evidence preservation is mandatory for SEV-1 events.
-
-Evolution:
-Project has entered the Operational Hardening phase (moving from architectural strength to operational trust enforcement).
-
-Risk Awareness:
-A runbook that is not exercised can create false confidence.
-Failure-injection validation is expected to follow.
-
-------------------------------------------------------------
-SYSTEM: Operational Validation
-------------------------------------------------------------
-
-Current State:
-DevVault maintains a deterministic smoke test procedure to validate end-to-end recoverability.
-
-Why:
-Backups that are not restored are unproven.
-Operational validation reduces false-positive trust risk.
-
-Operational Rule:
-Never trust a backup that has not been restored at least once.
-
-Risk Awareness:
-Skipping restore tests is one of the most common causes of catastrophic backup failure.
-
-------------------------------------------------------------
-SYSTEM: Failure UX (Operator Calm)
-------------------------------------------------------------
-
-Current State:
-Expected operational failures (e.g., invalid/corrupt manifest) refuse cleanly without stack traces.
-
-Recent hardening:
-- Added failure-injection tests ensuring malformed `manifest.json` is rejected (verify + restore) and restore creates no destination on refusal.
-- Added schema-invalid manifest refusal tests (missing required `files` field) for verify + restore.
-- Added failure-injection tests ensuring verify/restore refuse when manifest references missing snapshot files.
-- Restore now stages output when destination does not exist and only promotes on full verification (prevents empty destination side-effects on refusal).
-- Added failure-injection test simulating interrupted restore copy; ensures destination is not promoted and staging remains unpromoted on failure.
-- Restore refuses if a staging directory already exists for the destination (prevents ambiguous promotion and silent overwrite risk).
-- Clarified Windows symlink test skip messaging to reflect capability limitations (non-admin session).
-
-Why:
-Tracebacks increase operator panic and feel like abandonment.
-Trust systems must fail closed with calm, actionable output.
-
-Operational Rule:
-Refusals must be single-line, explicit, and non-panicking (no traceback).
-
-
-------------------------------------------------------------
-SYSTEM: CI Trust Gates
-------------------------------------------------------------
-
-Current State:
-- GitHub Actions runs a cross-platform test matrix (Windows + Linux).
-- Packaging smoke validates build + install correctness:
-  - build sdist + wheel
-  - install wheel into fresh venv
-  - smoke `devvault --help`
-
-Operational Rule:
-CI is a required trust gate. Packaging failures are release-blocking.
-
-
-### Desktop Client — ACTIVE SYSTEM
+## SYSTEM: Desktop Layer
 
 Role:
-Primary human interface for DevVault trustware operations.
+Safety interface for human operators.
 
 Responsibilities:
-- Vault selection
-- Backup initiation
-- Snapshot restore
-- User safety signaling
-- Operational visibility via log surface
 
-Status: Production-path candidate (not experimental)
+- vault selection  
+- preflight visibility  
+- refusal signaling  
+- guarded restore flow  
 
+UI must never weaken engine safety boundaries.
+
+---
+
+## SYSTEM: Operational Direction
+
+DevVault protects work that cannot be recreated.
+
+Primary design lens:
+
+- source code  
+- creative projects  
+- research  
+- client deliverables  
+
+Expansion is permitted only when it strengthens protection of irreplaceable data.
+
+---
+
+## ENGINEERING OPERATING MODEL
+
+Active principles:
+
+- fail closed  
+- tests before risk  
+- deterministic file writes  
+- architectural checkpoints  
+- no silent assumptions  
+
+If the system begins to feel chaotic — stop building and stabilize.
+
+Trust is accumulated through predictable refusal of unsafe states.
