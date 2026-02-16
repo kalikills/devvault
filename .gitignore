@@ -51,3 +51,6 @@ dist/
 
 # Debug spec exception
 !DevVault.spec
+
+# Inno Setup output
+installer/output/
