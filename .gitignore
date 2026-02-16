@@ -43,3 +43,11 @@ Dump-DevVaultContext.ps1
 # local operator helpers
 Dump-DevVaultContext.ps1
 
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Debug spec exception
+!DevVault.spec
