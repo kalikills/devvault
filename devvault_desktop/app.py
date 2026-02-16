@@ -549,3 +549,46 @@ def main() -> int:
     app = DevVaultApp()
     app.mainloop()
     return 0
+
+if __name__ == "__main__":
+    import os
+    import sys
+    import traceback
+    from pathlib import Path
+    from datetime import datetime
+
+    def _write_launch_log(text: str) -> str:
+        try:
+            log_dir = Path(os.environ.get("LOCALAPPDATA", ".")) / "DevVault" / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / "desktop_launch.log"
+            stamp = datetime.now().isoformat(timespec="seconds")
+            log_path.write_text(f"[{stamp}] {text}\n", encoding="utf-8")
+            return str(log_path)
+        except Exception:
+            return ""
+
+    try:
+        raise SystemExit(main())
+    except Exception:
+        tb = traceback.format_exc()
+        log_path = _write_launch_log(tb)
+
+        # In console builds, also emit to stderr for immediate visibility
+        try:
+            sys.stderr.write(tb + "\n")
+        except Exception:
+            pass
+
+        # In windowed builds, show a calm error dialog so launch is never silent
+        try:
+            from tkinter import messagebox
+            msg = "DevVault failed to launch.\n\n"
+            if log_path:
+                msg += f"A diagnostic log was written to:\n{log_path}\n\n"
+            msg += "If this keeps happening, please share the log."
+            messagebox.showerror("DevVault — Launch Failure", msg)
+        except Exception:
+            pass
+
+        raise
