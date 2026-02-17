@@ -5,7 +5,7 @@ a = Analysis(
     ['devvault_desktop\\app.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('devvault_desktop\\assets\\vault.ico', 'devvault_desktop\\assets')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

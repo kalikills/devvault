@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -53,9 +54,14 @@ class DevVaultApp(tk.Tk):
         self.minsize(560, 360)
         self.configure(bg=self.BG)
 
-        # Titlebar icon
+        # Titlebar icon (source + PyInstaller-safe)
         try:
-            ico_path = Path(__file__).with_name("assets") / "vault.ico"
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                base = Path(sys._MEIPASS)  # PyInstaller extraction dir
+                ico_path = base / "devvault_desktop" / "assets" / "vault.ico"
+            else:
+                ico_path = Path(__file__).resolve().parent / "assets" / "vault.ico"
+
             if ico_path.exists():
                 self.iconbitmap(default=str(ico_path))
         except Exception:
