@@ -54,3 +54,4 @@ dist/
 
 # Inno Setup output
 installer/output/
+*.bak*
