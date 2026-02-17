@@ -1070,3 +1070,14 @@ Moves DevVault from stringly-typed failures toward a structured refusal model, e
 
 Architectural impact:
 Moves DevVault from "feature-complete architecture" toward a governed reliability program with concrete launch gates and acceptance criteria.
+
+## 2026-02-17 — Vault-Managed Integrity Key (Enterprise Posture)
+
+- Introduced vault-scoped manifest HMAC key resolution.
+- Backup, verify, and restore now resolve integrity keys relative to the vault root instead of transient snapshot paths.
+- Auto-initialization during backup is disabled to prevent unintended vault mutation during failure scenarios.
+- Enables deterministic verification while preserving fail-closed behavior.
+
+Architectural impact:
+Establishes vault identity as a cryptographic trust anchor, preparing DevVault for enterprise-grade recovery expectations and operator independence.
+
