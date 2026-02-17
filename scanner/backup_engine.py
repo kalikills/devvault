@@ -39,8 +39,8 @@ class BackupEngine:
 
         Notes:
         - Uses the SAME traversal + symlink-skip policy as backup/manifest generation.
-        - Does not open/read file contents (stats only). Backup may still refuse later
-          if a file becomes unreadable during copy/hash. That's correct fail-closed behavior.
+        - Performs a minimal read probe (open + 1-byte read) to detect locked/in-use files early.
+          Backup may still refuse later if a file becomes unreadable after preflight (race conditions).
         """
         src_root = request.source_root.expanduser().resolve()
         backup_root = request.backup_root.expanduser().resolve()
@@ -105,6 +105,14 @@ class BackupEngine:
                         st = self._fs.stat(node)
                         file_count += 1
                         total_bytes += int(getattr(st, "st_size", 0) or 0)
+
+                        # Minimal read probe: detect share-locked/in-use files early (Windows).
+                        # This is best-effort: backup may still refuse later due to races.
+                        try:
+                            with self._fs.open_read(node) as fh:
+                                _ = fh.read(1)
+                        except Exception as e:
+                            record_unreadable(node, e)
                     except Exception as e:
                         record_unreadable(node, e)
                     return
