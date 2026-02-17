@@ -1062,3 +1062,11 @@ Stabilizes the Desktop↔CLI seam as a reliability boundary with deterministic o
 
 Architectural impact:
 Moves DevVault from stringly-typed failures toward a structured refusal model, enabling precise Desktop messaging and future automation policy without brittle stderr parsing.
+
+## 2026-02-17 — Reliability Roadmap to Launch formalized
+
+- Added a launch-grade reliability roadmap to PROJECT_STATUS.md (restore confidence drills, key survivability, atomic finalize preconditions, destructive validation, release readiness).
+- Establishes explicit v1.0 launch gates: no false confidence, restore drift detection, key survivability, and explicit atomicity guarantees.
+
+Architectural impact:
+Moves DevVault from "feature-complete architecture" toward a governed reliability program with concrete launch gates and acceptance criteria.
