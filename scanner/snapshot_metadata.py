@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from scanner.errors import SnapshotCorrupt
+
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -48,27 +50,27 @@ def read_snapshot_metadata(*, fs: FileSystemPort, snapshot_dir: Path) -> Snapsho
 
     manifest_path = snapshot_dir / "manifest.json"
     if not fs.exists(manifest_path) or not fs.is_file(manifest_path):
-        raise RuntimeError("Snapshot is missing manifest.json")
+        raise SnapshotCorrupt("Snapshot is missing manifest.json")
 
     manifest = json.loads(fs.read_text(manifest_path))
 
     mv = manifest.get("manifest_version")
     if not isinstance(mv, int):
-        raise RuntimeError("Invalid manifest: missing/invalid manifest_version")
+        raise SnapshotCorrupt("Invalid manifest: missing/invalid manifest_version")
 
     files = manifest.get("files")
     if not isinstance(files, list):
-        raise RuntimeError("Invalid manifest: expected 'files' list")
+        raise SnapshotCorrupt("Invalid manifest: expected 'files' list")
 
     total = 0
     count = 0
 
     for item in files:
         if not isinstance(item, dict):
-            raise RuntimeError("Invalid manifest: file entry must be an object")
+            raise SnapshotCorrupt("Invalid manifest: file entry must be an object")
         size = item.get("size")
         if not isinstance(size, int) or size < 0:
-            raise RuntimeError("Invalid manifest: file entry size must be a non-negative integer")
+            raise SnapshotCorrupt("Invalid manifest: file entry size must be a non-negative integer")
         total += size
         count += 1
 
@@ -76,7 +78,7 @@ def read_snapshot_metadata(*, fs: FileSystemPort, snapshot_dir: Path) -> Snapsho
     if mv == 2:
         ca = manifest.get("checksum_algo")
         if ca is not None and not isinstance(ca, str):
-            raise RuntimeError("Invalid manifest: checksum_algo must be a string")
+            raise SnapshotCorrupt("Invalid manifest: checksum_algo must be a string")
         checksum_algo = ca
 
     return SnapshotMetadata(

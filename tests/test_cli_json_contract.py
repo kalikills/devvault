@@ -78,4 +78,4 @@ def test_restore_error_goes_to_stderr_only(tmp_path: Path) -> None:
     res = _run(["restore", str(snap), str(dst), "--json"])
     assert res.returncode == 1
     assert res.stdout == ""
-    assert "devvault: error:" in res.stderr
+    assert ("devvault: error:" in res.stderr) or ("devvault: refused:" in res.stderr)

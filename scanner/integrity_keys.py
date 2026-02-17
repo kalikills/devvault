@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from scanner.errors import SnapshotCorrupt
+
 import os
 from dataclasses import dataclass
 
@@ -24,10 +26,10 @@ def _load_hex_env(var_name: str, *, min_bytes: int) -> bytes | None:
     try:
         b = bytes.fromhex(raw)
     except ValueError:
-        raise RuntimeError(f"Invalid {var_name}: must be hex.") from None
+        raise SnapshotCorrupt(f"Invalid {var_name}: must be hex.") from None
 
     if len(b) < min_bytes:
-        raise RuntimeError(f"Invalid {var_name}: must be at least {min_bytes} bytes.")
+        raise SnapshotCorrupt(f"Invalid {var_name}: must be at least {min_bytes} bytes.")
 
     return b
 

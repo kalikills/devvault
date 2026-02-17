@@ -13,6 +13,7 @@ from scanner.models import ScanRequest
 from scanner.models.backup import BackupRequest
 from scanner.restore_engine import RestoreEngine, RestoreRequest
 from scanner.verify_engine import VerifyEngine, VerifyRequest
+from scanner.errors import DevVaultRefusal
 
 
 _COMMANDS = {"scan", "backup", "restore", "verify", "preflight"}
@@ -355,6 +356,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if isinstance(code, int):
             return code
+        return 1
+
+    except DevVaultRefusal as e:
+        print(f"devvault: refused: {e}", file=sys.stderr)
         return 1
 
     except RuntimeError as e:
