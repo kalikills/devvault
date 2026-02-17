@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import re
@@ -24,10 +26,55 @@ class CliResult:
 
 
 def _run_devvault(argv: list[str]) -> CliResult:
-    # Use the current interpreter/venv to run devvault reliably (desktop wrapper safe).
-    cmd = [sys.executable, "-m", "devvault", *argv]
-    p = subprocess.run(cmd, text=True, capture_output=True)
-    return CliResult(returncode=p.returncode, stdout=p.stdout, stderr=p.stderr)
+    """Run DevVault CLI without spawning a new process.
+
+    Why:
+    - In packaged GUI builds (PyInstaller), sys.executable points to the GUI exe.
+      Using subprocess with sys.executable would relaunch the GUI (recursive windows).
+    - In-process execution removes interpreter ambiguity and reduces failure surface.
+    """
+    out = io.StringIO()
+    err = io.StringIO()
+
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            # Prefer devvault.cli.main if present; fall back to devvault.__main__.main
+            cli_main = None
+            try:
+                from devvault import cli as _cli_mod  # type: ignore
+                cli_main = getattr(_cli_mod, "main", None)
+            except Exception:
+                cli_main = None
+
+            if cli_main is None:
+                from devvault.__main__ import main as cli_main  # type: ignore
+
+            rc = None
+            try:
+                # Common shape: main(argv: list[str]) -> int
+                rc = cli_main(argv)  # type: ignore[misc]
+            except TypeError:
+                # Alternate shape: main() reads sys.argv
+                old_argv = sys.argv
+                sys.argv = ["devvault", *argv]
+                try:
+                    rc = cli_main()  # type: ignore[misc]
+                finally:
+                    sys.argv = old_argv
+
+            if rc is None:
+                rc = 0
+
+        except SystemExit as e:
+            code = getattr(e, "code", 0)
+            rc = int(code) if isinstance(code, int) else 0
+
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            rc = 1
+
+    return CliResult(returncode=int(rc), stdout=out.getvalue(), stderr=err.getvalue())
 
 
 def _is_wsl() -> bool:
