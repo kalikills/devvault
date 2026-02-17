@@ -1050,3 +1050,15 @@ Transforms Desktop from functional wrapper → trust-signaling safety interface.
 
 Architectural impact:
 Stabilizes the Desktop↔CLI seam as a reliability boundary with deterministic outcomes.
+
+
+## 2026-02-17 — Typed refusals introduced; snapshot/restore failures now structured
+
+- Added `scanner/errors.py` defining `DevVaultRefusal` and initial refusal taxonomy for operator-correctable unsafe states.
+- Converted snapshot/manifest/verification and restore preflight failures from generic `RuntimeError` into typed refusals (e.g., `SnapshotCorrupt`, `RestoreRefused`).
+- Converted backup safety check (vault inside source) into a typed refusal to prevent recursive self-copy.
+- CLI now treats `DevVaultRefusal` as an expected refusal: prints `devvault: refused: ...` to stderr and returns exit code 1.
+- Tests updated to preserve stderr-only contract while allowing the new refusal prefix; added CLI contract tests for refusal exit behavior.
+
+Architectural impact:
+Moves DevVault from stringly-typed failures toward a structured refusal model, enabling precise Desktop messaging and future automation policy without brittle stderr parsing.
