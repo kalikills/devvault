@@ -1039,3 +1039,14 @@ Prevents silent release drift and preserves operator trust in distributed binari
 
 Architectural impact:
 Transforms Desktop from functional wrapper → trust-signaling safety interface.
+
+
+## 2026-02-17 — CLI contract normalized; Desktop↔CLI boundary hardened
+
+- Normalized CLI entry to `def main(argv: list[str] | None = None) -> int`.
+- CLI converts `argparse` `SystemExit` into deterministic return codes (help=0, parse error=2).
+- Desktop runner calls `devvault.cli.main(argv)` directly (removed fallback and `sys.argv` mutation).
+- Added contract tests to freeze exit-code behavior for help and parse errors.
+
+Architectural impact:
+Stabilizes the Desktop↔CLI seam as a reliability boundary with deterministic outcomes.
