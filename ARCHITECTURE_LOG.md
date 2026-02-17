@@ -1015,3 +1015,17 @@ The desktop client is now a primary interface — no longer experimental.
 
 NEXT PHASE: Desktop Hardening + Trust Signals + Pre-Release Polish.
 
+
+## 2026-02-16 — Release pipeline invariant established (icon / dist freshness)
+
+- Diagnosed missing titlebar icon as a stale PyInstaller dist, not a Tkinter fault.
+- Confirmed executable icon must be embedded via DevVault.spec.
+- Established release invariant:
+
+  PyInstaller rebuild → THEN Inno installer compile.
+
+Installer artifacts must never be produced from outdated dist output.
+
+Architectural impact:
+Prevents silent release drift and preserves operator trust in distributed binaries.
+
