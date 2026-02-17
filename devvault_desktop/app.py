@@ -457,6 +457,29 @@ class DevVaultApp(tk.Tk):
                         for w in warnings[:3]:
                             msg_lines.append(f"  - {w}")
 
+                    # STRICT POSTURE A:
+                    # If unreadable paths exist — refuse immediately.
+                    if unread_total > 0:
+                        banner_lines = [
+                            "Backup cannot proceed",
+                            "DevVault detected files that cannot be safely read.",
+                            f"Unreadable paths: {unread_total}",
+                        ]       
+                        dlg = PreflightDialog(
+                            self,
+                            title="Backup Refused",
+                            banner_lines=banner_lines,
+                            detail_lines=msg_lines,
+                            ok_text="Close",
+                            ok_enabled=True,
+                            show_cancel=False,
+                            show_refusal_banner=True,
+                        )
+                        _ = dlg.show()
+                        self._set_status(f"REFUSED (preflight): {unread_total} unreadable paths")
+                        self._set_busy(False, status="Vault open and ready....")
+                        return
+
                     dlg = PreflightDialog(
                         self,
                         title="Backup Preflight",
@@ -466,6 +489,27 @@ class DevVaultApp(tk.Tk):
                     ok = dlg.show()
                     if not ok:
                         self._set_status("Backup cancelled after preflight.")
+                        self._set_busy(False, status="Vault open and ready....")
+                        return
+
+                    # Reliability posture B: fail closed if ANY unreadable/locked paths exist.
+                    if unread_total > 0:
+                        banner_lines = [
+                            "Backup cannot proceed",
+                            "DevVault detected files that cannot be safely read.",
+                            f"Unreadable paths: {unread_total}",
+                        ]
+                        dlg2 = PreflightDialog(
+                            self,
+                            title="Backup Refused",
+                            banner_lines=banner_lines,
+                            detail_lines=msg_lines,
+                            ok_text="Close",
+                            ok_enabled=True,
+                            show_cancel=False,
+                        )
+                        _ = dlg2.show()
+                        self._set_status(f"REFUSED (preflight): {unread_total} unreadable paths")
                         self._set_busy(False, status="Vault open and ready....")
                         return
 

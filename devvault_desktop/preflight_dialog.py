@@ -5,7 +5,18 @@ from tkinter import ttk
 
 
 class PreflightDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Tk, *, title: str, banner_lines: list[str], detail_lines: list[str]) -> None:
+    def __init__(
+        self,
+        parent: tk.Tk,
+        *,
+        title: str,
+        banner_lines: list[str],
+        detail_lines: list[str],
+        ok_text: str = "OK",
+        ok_enabled: bool = True,
+        show_cancel: bool = True,
+        show_refusal_banner: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.title(title)
         self.resizable(False, False)
@@ -28,31 +39,72 @@ class PreflightDialog(tk.Toplevel):
         )
         banner.pack(fill="x", pady=(0, 10))
 
-        # Details (monospace block)
+        # HARD REFUSAL SIGNAL (only when configured)
+        if show_refusal_banner:
+            refusal = tk.Label(
+                outer,
+                text="BACKUP REFUSED — YOUR DATA IS NOT PROTECTED",
+                fg="#b00020",  # deep trust red
+                font=("Segoe UI", 10, "bold"),
+                anchor="w",
+                justify="left",
+            )
+            refusal.pack(fill="x", pady=(0, 6))
+
+            action = tk.Label(
+                outer,
+                text="Close locked files or fix permissions, then run backup again.",
+                font=("Segoe UI", 9),
+                anchor="w",
+                justify="left",
+            )
+            action.pack(fill="x", pady=(0, 10))
+
+        # Details area (bounded + scrollable)
+        details_frame = tk.Frame(outer)
+        details_frame.pack(fill="x", expand=False)
+        details_frame.configure(height=220)
+        details_frame.pack_propagate(False)  # critical: prevents the Text from forcing the dialog larger
+
+        yscroll = ttk.Scrollbar(details_frame, orient="vertical")
+        yscroll.pack(side="right", fill="y")
+
         details = tk.Text(
-            outer,
-            width=64,
-            height=min(16, max(8, len(detail_lines) + 2)),
-            wrap="none",
+            details_frame,
+            wrap="word",
             font=("Consolas", 10),
             borderwidth=1,
             relief="solid",
+            yscrollcommand=yscroll.set,
         )
+        yscroll.config(command=details.yview)
+
         details.insert("1.0", "\n".join(detail_lines))
+
+        # Ensure the beginning of the text is visible
+        try:
+            details.see("1.0")
+        except Exception:
+            pass
+
         details.configure(state="disabled")
-        details.pack(fill="both", expand=True)
+        details.pack(side="left", fill="both", expand=True)
 
         # Buttons
         btn_row = tk.Frame(outer)
         btn_row.pack(fill="x", pady=(12, 0))
-
         btn_row.columnconfigure(0, weight=1)
 
-        cancel_btn = ttk.Button(btn_row, text="Cancel", command=self._cancel)
-        ok_btn = ttk.Button(btn_row, text="OK", command=self._ok)
+        ok_btn = ttk.Button(btn_row, text=ok_text, command=self._ok)
+        if not ok_enabled:
+            ok_btn.state(["disabled"])
 
-        cancel_btn.grid(row=0, column=1, padx=(0, 8))
-        ok_btn.grid(row=0, column=2)
+        if show_cancel:
+            cancel_btn = ttk.Button(btn_row, text="Cancel", command=self._cancel)
+            cancel_btn.grid(row=0, column=1, padx=(0, 8))
+            ok_btn.grid(row=0, column=2)
+        else:
+            ok_btn.grid(row=0, column=2)
 
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
@@ -66,7 +118,7 @@ class PreflightDialog(tk.Toplevel):
             w = self.winfo_width()
             h = self.winfo_height()
             x = px + (pw // 2) - (w // 2)
-            y = py + (ph // 2) - (h // 2)
+            y = py + int(ph * 0.45) - (h // 2)
             self.geometry(f"+{x}+{y}")
         except Exception:
             pass
