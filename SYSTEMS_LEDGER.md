@@ -101,3 +101,12 @@ Active principles:
 If the system begins to feel chaotic — stop building and stabilize.
 
 Trust is accumulated through predictable refusal of unsafe states.
+
+## SYSTEM: Source Readability Verification
+
+Preflight now performs a minimal read probe (open + 1-byte read) on files to detect share-locked or unreadable paths before backup begins.
+
+Implication:
+Metadata visibility alone is no longer considered evidence of recoverability.
+
+Unreadable sources trigger fail-closed refusal.
