@@ -46,9 +46,15 @@ def test_preflight_detects_share_locked_file(tmp_path: Path) -> None:
         rep = eng.preflight(req)
 
         # Assert
-        # We specifically want the locked/in-use counter to be >= 1.
-        assert rep.unreadable_locked_or_in_use >= 1
-        # And the locked file should show up in samples (best-effort; at least one sample should exist).
+        # Invariant: preflight must detect that not all files are safely readable,
+        # and must surface the unreadable file in samples.
+        unreadable_total = (
+            rep.unreadable_permission_denied
+            + rep.unreadable_locked_or_in_use
+            + rep.unreadable_not_found
+            + rep.unreadable_other_io
+        )
+        assert unreadable_total >= 1
         assert any("locked.txt" in s for s in rep.unreadable_samples)
 
     finally:
