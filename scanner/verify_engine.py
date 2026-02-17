@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scanner.checksum import hash_path
-from scanner.integrity_keys import load_manifest_hmac_key_from_env
+from scanner.integrity_keys import load_manifest_hmac_key
 from scanner.manifest_integrity import verify_manifest_integrity
 from scanner.manifest_schema import validate_crypto_stanza
 from scanner.ports.filesystem import FileSystemPort
@@ -47,7 +47,7 @@ class VerifyEngine:
                 f"Snapshot manifest is invalid JSON; refusing verify. Path: {manifest_path}"
             ) from None
 
-        hmac_key = load_manifest_hmac_key_from_env()
+        hmac_key = load_manifest_hmac_key(vault_root=req.snapshot_dir.parent)
         ok, _reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
         if not ok:
             raise SnapshotCorrupt("Invalid manifest: integrity check failed.")
@@ -105,4 +105,5 @@ class VerifyEngine:
             verified += 1
 
         return VerifyResult(snapshot_dir=req.snapshot_dir, files_verified=verified)
+
 

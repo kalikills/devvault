@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from scanner.errors import SnapshotCorrupt
 
 import os
 from dataclasses import dataclass
 
 from scanner.crypto.kdf import hkdf_sha256
-
-
+from scanner.vault_key_windows import init_manifest_hmac_key_if_missing, try_load_manifest_hmac_key
 @dataclass(frozen=True)
 class MasterKey:
     key_bytes: bytes
@@ -65,3 +65,28 @@ def load_manifest_hmac_key_from_env() -> ManifestHmacKey | None:
     if b is None:
         return None
     return ManifestHmacKey(key_bytes=b)
+
+def load_manifest_hmac_key(*, vault_root: Path | None = None, allow_init: bool = False) -> ManifestHmacKey | None:
+    """Enterprise-leaning key resolution.
+
+    Order:
+      1) If vault_root is provided: prefer vault-managed key (DPAPI protected on Windows).
+         If allow_init=True and key is missing, auto-create a vault-managed key (Windows only).
+      2) Fallback to env-based keying (master-derived preferred, then legacy manifest key).
+
+    Returns None if no key material exists.
+    Raises SnapshotCorrupt when key material exists but is invalid/unusable.
+    """
+    if vault_root is not None:
+        vr = Path(vault_root)
+        kb = try_load_manifest_hmac_key(vr)
+        if kb is not None:
+            return ManifestHmacKey(key_bytes=kb)
+        if allow_init:
+            kb2 = init_manifest_hmac_key_if_missing(vr)
+            if kb2 is not None:
+                return ManifestHmacKey(key_bytes=kb2)
+
+    return load_manifest_hmac_key_from_env()
+
+

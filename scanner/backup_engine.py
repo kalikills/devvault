@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from scanner.checksum import hash_path
 from scanner.manifest_integrity import add_integrity_block
-from scanner.integrity_keys import load_manifest_hmac_key_from_env
+from scanner.integrity_keys import load_manifest_hmac_key
 from scanner.ports.filesystem import FileSystemPort
 from scanner.models.backup import BackupRequest, PreflightReport
 
@@ -246,7 +246,9 @@ class BackupEngine:
     # Manifest (v2)
     # --------------------------------------------------------
 
-    def _write_manifest(self, *, src_root: Path, dst_root: Path) -> None:
+    def _write_manifest(self, *, src_root: Path, dst_root: Path, backup_root: Path | None = None) -> None:
+        if backup_root is None:
+            backup_root = dst_root.parent
         files: list[dict[str, object]] = []
         algo = "sha256"
 
@@ -271,7 +273,7 @@ class BackupEngine:
             "files": files,
         }
 
-        hmac_key = load_manifest_hmac_key_from_env()
+        hmac_key = load_manifest_hmac_key(vault_root=dst_root.parent, allow_init=False)
         manifest = add_integrity_block(manifest, hmac_key=hmac_key)
 
         manifest_path = dst_root / "manifest.json"
@@ -298,3 +300,11 @@ class BackupEngine:
         if self._fs.is_file(node):
             yield node.relative_to(root)
             return
+
+
+
+
+
+
+
+
