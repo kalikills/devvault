@@ -133,9 +133,9 @@ def _p(s: str) -> _Path:
     return _Path(s).expanduser()
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     try:
-        args = parse_args()
+        args = parse_args(argv)
 
         # -------------------------
         # scan
@@ -348,10 +348,20 @@ def main() -> int:
 
         return 2
 
+    except SystemExit as e:
+        # argparse uses SystemExit for -h/--help (0) and parse errors (2)
+        code = getattr(e, "code", 0)
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        return 1
+
     except RuntimeError as e:
         print(f"devvault: error: {e}", file=sys.stderr)
         return 1
 
-
-if __name__ == "__main__":
-    sys.exit(main())
+    except Exception:
+        # Unexpected fault: fail closed, no traceback at boundary.
+        print("devvault: internal error", file=sys.stderr)
+        return 2

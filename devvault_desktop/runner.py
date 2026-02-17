@@ -38,30 +38,10 @@ def _run_devvault(argv: list[str]) -> CliResult:
 
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:
-            # Prefer devvault.cli.main if present; fall back to devvault.__main__.main
-            cli_main = None
-            try:
-                from devvault import cli as _cli_mod  # type: ignore
-                cli_main = getattr(_cli_mod, "main", None)
-            except Exception:
-                cli_main = None
+            # Single stable contract: devvault.cli.main(argv) -> int
+            from devvault.cli import main as cli_main
 
-            if cli_main is None:
-                from devvault.__main__ import main as cli_main  # type: ignore
-
-            rc = None
-            try:
-                # Common shape: main(argv: list[str]) -> int
-                rc = cli_main(argv)  # type: ignore[misc]
-            except TypeError:
-                # Alternate shape: main() reads sys.argv
-                old_argv = sys.argv
-                sys.argv = ["devvault", *argv]
-                try:
-                    rc = cli_main()  # type: ignore[misc]
-                finally:
-                    sys.argv = old_argv
-
+            rc = cli_main(argv)
             if rc is None:
                 rc = 0
 
