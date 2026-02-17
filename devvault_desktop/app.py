@@ -409,34 +409,17 @@ class DevVaultApp(tk.Tk):
                     file_count = int(rep.get("file_count", 0) or 0)
                     skipped_symlinks = int(rep.get("skipped_symlinks", 0) or 0)
 
-                    # Space check: STRICT (fail-closed). If we cannot prove enough space, refuse.
+                    space_line = "WARNING: Destination free space not verified."
                     try:
                         usage = shutil.disk_usage(vault_root_s)
                         free_b = int(usage.free)
-                    except Exception as e:
-                        msg = f"Refusing backup: could not verify free space for vault.\n\nVault: {vault_root_s}\nReason: {e}"
-                        self._set_status("Refused: vault free space could not be verified.")
-                        messagebox.showerror("Preflight Refused", msg)
-                        self._set_busy(False, status="Vault open and ready....")
-                        return
+                        if free_b >= total_bytes:
+                            space_line = f"Destination free space OK: {_human_bytes(free_b)} free."
+                        else:
+                            space_line = f"WARNING: Low free space: {_human_bytes(free_b)} free (needs ~{_human_bytes(total_bytes)})."
+                    except Exception:
+                        pass
 
-                    if free_b < total_bytes:
-
-                        msg = (
-                            "Refusing backup: insufficient free space on vault.\n\n"
-                            f"Vault: {vault_root_s}\n"
-                            f"Required: {_human_bytes(total_bytes)}\n"
-                            f"Free:     {_human_bytes(free_b)}"
-                        )
-                        self._set_status("Refused: insufficient vault free space.")
-                        messagebox.showerror("Preflight Refused", msg)
-                        self._set_busy(False, status="Vault open and ready....")
-                        return
-
-                    space_line = f"Destination free space OK: {_human_bytes(free_b)} free."
-
-
-                    # Banner (high-signal summary)
                     banner_lines: list[str] = [
                         "Verify Backup Plan",
                         f"Source: {src_root_s}",
@@ -444,7 +427,6 @@ class DevVaultApp(tk.Tk):
                         space_line,
                     ]
 
-                    # Details (monospace block)
                     msg_lines = [
                         "FILES",
                         f"  Count: {file_count}",
@@ -481,7 +463,6 @@ class DevVaultApp(tk.Tk):
                         self._set_busy(False, status="Vault open and ready....")
                         return
 
-                    # Start backup off-thread
                     self._refresh_vault_ui()
                     self._set_busy(True, status=f"Backup started: {src_path}")
                     threading.Thread(target=run_backup_worker, daemon=True).start()
@@ -550,45 +531,6 @@ def main() -> int:
     app.mainloop()
     return 0
 
+
 if __name__ == "__main__":
-    import os
-    import sys
-    import traceback
-    from pathlib import Path
-    from datetime import datetime
-
-    def _write_launch_log(text: str) -> str:
-        try:
-            log_dir = Path(os.environ.get("LOCALAPPDATA", ".")) / "DevVault" / "logs"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_path = log_dir / "desktop_launch.log"
-            stamp = datetime.now().isoformat(timespec="seconds")
-            log_path.write_text(f"[{stamp}] {text}\n", encoding="utf-8")
-            return str(log_path)
-        except Exception:
-            return ""
-
-    try:
-        raise SystemExit(main())
-    except Exception:
-        tb = traceback.format_exc()
-        log_path = _write_launch_log(tb)
-
-        # In console builds, also emit to stderr for immediate visibility
-        try:
-            sys.stderr.write(tb + "\n")
-        except Exception:
-            pass
-
-        # In windowed builds, show a calm error dialog so launch is never silent
-        try:
-            from tkinter import messagebox
-            msg = "DevVault failed to launch.\n\n"
-            if log_path:
-                msg += f"A diagnostic log was written to:\n{log_path}\n\n"
-            msg += "If this keeps happening, please share the log."
-            messagebox.showerror("DevVault — Launch Failure", msg)
-        except Exception:
-            pass
-
-        raise
+    raise SystemExit(main())
