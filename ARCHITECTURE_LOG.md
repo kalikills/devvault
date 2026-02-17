@@ -1029,3 +1029,13 @@ Installer artifacts must never be produced from outdated dist output.
 Architectural impact:
 Prevents silent release drift and preserves operator trust in distributed binaries.
 
+
+## 2026-02-17 — Desktop Trust Surface Hardened
+
+- Preflight refusal is now visually authoritative and operator-clear.
+- Dialog communicates unsafe state, evidence, and recovery path.
+- Scroll-bounded details prevent layout instability.
+- Modal positioning tuned for spatial balance and operator confidence.
+
+Architectural impact:
+Transforms Desktop from functional wrapper → trust-signaling safety interface.
