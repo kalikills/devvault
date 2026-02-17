@@ -1081,3 +1081,16 @@ Moves DevVault from "feature-complete architecture" toward a governed reliabilit
 Architectural impact:
 Establishes vault identity as a cryptographic trust anchor, preparing DevVault for enterprise-grade recovery expectations and operator independence.
 
+
+## 2026-02-17 — CLI key escrow export (explicit operator acknowledgment)
+
+- Added devvault key export to export the vault-managed manifest HMAC key in **base64**.
+- Requires explicit --ack-plaintext-export to prevent accidental plaintext key exfiltration.
+- Emits JSON on --json and writes an escrow JSON file to the requested path.
+- Added tests enforcing:
+  - refusal without ack (exit code 1, stderr-only)
+  - success with ack (exit code 0, JSON payload, escrow file exists)
+
+Architectural impact:
+Introduces an intentional, audited escape hatch for vault key survivability while keeping fail-closed defaults and explicit operator consent.
+
