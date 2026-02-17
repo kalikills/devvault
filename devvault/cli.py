@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import sys
 from pathlib import Path as _Path
@@ -14,9 +15,8 @@ from scanner.models.backup import BackupRequest
 from scanner.restore_engine import RestoreEngine, RestoreRequest
 from scanner.verify_engine import VerifyEngine, VerifyRequest
 from scanner.errors import DevVaultRefusal
-
-
-_COMMANDS = {"scan", "backup", "restore", "verify", "preflight"}
+from scanner.integrity_keys import load_manifest_hmac_key
+_COMMANDS = {"scan", "backup", "restore", "verify", "preflight", "key"}
 def _rewrite_argv_for_backcompat(argv: list[str]) -> list[str]:
     """
     Backwards-compatible behavior:
@@ -127,6 +127,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     verify.add_argument("--json", action="store_true", help="Output results as JSON.")
     verify.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
 
+        # -------------------------
+    # key
+    # -------------------------
+    key = sub.add_parser("key", help="Key management operations (dangerous).")
+    key_sub = key.add_subparsers(dest="key_command", required=True)
+
+    export = key_sub.add_parser("export", help="Export vault-managed manifest HMAC key (PLAINTEXT).")
+    export.add_argument("--vault", required=True, help="Vault root directory.")
+    export.add_argument("--out", required=True, help="Output path for escrow JSON.")
+    export.add_argument(
+        "--ack-plaintext-export",
+        action="store_true",
+        help="REQUIRED: acknowledge this exports key material in plaintext.",
+    )
+    export.add_argument("--json", action="store_true", help="Output results as JSON.")
+    export.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
     return parser.parse_args(argv)
 
 
@@ -318,6 +334,44 @@ def main(argv: list[str] | None = None) -> int:
         # -------------------------
         # verify
         # -------------------------
+        # -------------------------
+        # key
+        # -------------------------
+        if args.command == "key":
+            if args.key_command == "export":
+                if not args.ack_plaintext_export:
+                    raise DevVaultRefusal("Key export requires --ack-plaintext-export (plaintext key material).")
+
+                vault_root = _p(args.vault)
+                escrow_path = _p(args.out)
+
+                key_bytes = load_manifest_hmac_key(vault_root=vault_root, allow_init=False)
+                if not key_bytes:
+                    raise DevVaultRefusal("No vault-managed key found for this vault (run a backup to initialize).")
+
+                payload = {
+                    "status": "ok",
+                    "vault_root": str(vault_root),
+                    "escrow_path": str(escrow_path),
+                    "encoding": "base64",
+                    "manifest_hmac_key_b64": base64.b64encode(key_bytes.key_bytes).decode("ascii"),
+                }
+
+                escrow_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+                want_json = args.json or (args.output and args.output.lower().endswith(".json"))
+                out = json.dumps(payload) if want_json else f"Wrote escrow file: {escrow_path}"
+
+                if args.output:
+                    write_output(args.output, out)
+                    print(f"Wrote report to: {args.output}")
+                else:
+                    print(out)
+
+                return 0
+
+            raise DevVaultRefusal("Unknown key subcommand.")
+
         if args.command == "verify":
             fs = OSFileSystem()
             engine = VerifyEngine(fs)
@@ -370,3 +424,8 @@ def main(argv: list[str] | None = None) -> int:
         # Unexpected fault: fail closed, no traceback at boundary.
         print("devvault: internal error", file=sys.stderr)
         return 2
+
+
+
+
+
