@@ -69,12 +69,57 @@ def _run_devvault(argv: list[str]) -> CliResult:
             code = getattr(e, "code", 0)
             rc = int(code) if isinstance(code, int) else 0
 
-        except Exception:
+        except Exception as e:
+            # Operator-safe by default: no tracebacks in UI.
+            # Enable full traceback with: DEVVAULT_DEBUG=1
             import traceback
-            traceback.print_exc()
+            if os.environ.get("DEVVAULT_DEBUG", "").strip() == "1":
+                traceback.print_exc()
+            else:
+                print(f"{type(e).__name__}: {e}", file=sys.stderr)
             rc = 1
 
     return CliResult(returncode=int(rc), stdout=out.getvalue(), stderr=err.getvalue())
+
+
+
+def _summarize_stderr(stderr: str) -> str:
+    """Collapse stderr into a single operator-safe line."""
+    t = (stderr or "").strip()
+    if not t:
+        return ""
+    # If a traceback leaked in, take the last non-empty line.
+    if "Traceback (most recent call last):" in t:
+        lines = [ln.strip() for ln in t.splitlines() if ln.strip()]
+        return lines[-1] if lines else ""
+    # Otherwise keep first line (most error summaries are one-line now).
+    return t.splitlines()[0].strip()
+
+
+def _operator_message(op: str, stderr: str, fallback: str) -> str:
+    """Map internal failures to calm, actionable refusal messages."""
+    line = _summarize_stderr(stderr)
+    low = line.lower()
+
+    # Locked / permission / access denied
+    if "permissionerror" in low or "access is denied" in low or "errno 13" in low:
+        return f"{op} refused: one or more files are locked, in use, or not readable. Close those files and try again."
+
+    # Missing path
+    if "filenotfounderror" in low or "errno 2" in low:
+        return f"{op} refused: one or more paths disappeared during the operation. Try again after confirming the source folder still exists."
+
+    # Capacity / space (best-effort match)
+    if "no space left" in low or "not enough space" in low or "insufficient" in low and "space" in low:
+        return f"{op} refused: insufficient free space to complete safely."
+
+    # Vault gating (already human-friendly, let it pass through)
+    if "vault not available" in low:
+        return line or fallback
+
+    # Generic (still calm)
+    return line or fallback
+
 
 
 def _is_wsl() -> bool:
@@ -196,16 +241,25 @@ def best_effort_fs_warning(vault_dir: Path) -> Optional[str]:
 
 
 
+def _run_devvault_json(op: str, argv: list[str]) -> dict:
+    res = _run_devvault(argv)
+    if res.returncode != 0:
+        raise RuntimeError(_operator_message(op, res.stderr, f"{op} refused."))
+
+    try:
+        return json.loads(res.stdout)
+    except Exception:
+        # If CLI returned non-JSON, refuse with operator-safe message.
+        raise RuntimeError(_operator_message(op, res.stderr, f"{op} failed: invalid response from CLI."))
+
+
 def preflight_backup(*, source_dir: Path) -> dict:
     vault = get_vault_dir()
     reason = vault_preflight(vault)
     if reason is not None:
         raise RuntimeError(f"Vault not available: {vault} ({reason})")
 
-    res = _run_devvault(["preflight", str(source_dir), str(vault), "--json"])
-    if res.returncode != 0:
-        raise RuntimeError(res.stderr.strip() or "preflight failed")
-    return json.loads(res.stdout)
+    return _run_devvault_json("Preflight", ["preflight", str(source_dir), str(vault), "--json"])
 
 
 def backup(*, source_dir: Path) -> dict:
@@ -214,14 +268,8 @@ def backup(*, source_dir: Path) -> dict:
     if reason is not None:
         raise RuntimeError(f"Vault not available: {vault} ({reason})")
 
-    res = _run_devvault(["backup", str(source_dir), str(vault), "--json"])
-    if res.returncode != 0:
-        raise RuntimeError(res.stderr.strip() or "backup failed")
-    return json.loads(res.stdout)
+    return _run_devvault_json("Backup", ["backup", str(source_dir), str(vault), "--json"])
 
 
 def restore(*, snapshot_dir: Path, destination_dir: Path) -> dict:
-    res = _run_devvault(["restore", str(snapshot_dir), str(destination_dir), "--json"])
-    if res.returncode != 0:
-        raise RuntimeError(res.stderr.strip() or "restore failed")
-    return json.loads(res.stdout)
+    return _run_devvault_json("Restore", ["restore", str(snapshot_dir), str(destination_dir), "--json"])
