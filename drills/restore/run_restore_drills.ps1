@@ -72,7 +72,6 @@ function Invoke-DevVault([string[]]$cliArgs, [string]$outBase) {
   $psi.RedirectStandardOutput = $true
   $psi.RedirectStandardError  = $true
   $psi.Arguments = ($cmd | ForEach-Object { '"' + ($_ -replace '"','\"') + '"' }) -join ' '
-  Info ("args: " + $psi.Arguments)
 
   $p = [System.Diagnostics.Process]::new()
   $p.StartInfo = $psi
@@ -154,7 +153,6 @@ function Drill-D1_SourceDestroyedAfterBackup([string]$runDir, [string]$vaultRoot
 
   $backupLog = Join-Path $runDir "backup.log.txt"
   $j = Invoke-DevVaultJson @("backup", $src, $vaultRoot, "--json") $backupLog
-  Info ("Backup logs: " + $backupLog + ".out.txt / " + $backupLog + ".err.txt")
   # (handled by Invoke-DevVaultJson)
 
   # SnapshotDir (authoritative): trust backup JSON output.
