@@ -44,7 +44,7 @@ DevVault backups are now **cryptographically survivable.**
 
 These items increase operator trust and disaster confidence.
 
-- Restore disaster drills  
+- [x] Restore disaster drills
 - Destructive scenario validation  
 - Snapshot compatibility confidence  
 - Restore drift detection  
@@ -85,7 +85,7 @@ Fail closed always.
 Final stabilization pass:
 
 - refusal clarity  
-- CLI contract stability  
+- [x] CLI contract stability
 - desktop boundary safety  
 - log signal quality  
 
