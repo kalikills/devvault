@@ -61,3 +61,8 @@ installer/output/
 .drill_work/
 drills/
 
+
+# Local CI reproduction environments
+.pkgvenv/
+.wslvenv/
+.wslpkgvenv/
