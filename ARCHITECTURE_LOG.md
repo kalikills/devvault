@@ -1098,11 +1098,12 @@ Introduces an intentional, audited escape hatch for vault key survivability whil
 ## 2026-02-20 — Platform boundary: vault-managed key export is Windows-only
 
 - CI failure on ubuntu-latest revealed that manifest HMAC key initialization relies on Windows DPAPI.
-- 	est_key_export_succeeds_with_ack now explicitly skipped on non-Windows platforms.
+- 	test_key_export_succeeds_with_ack now explicitly skipped on non-Windows platforms.
 - Fail-closed behavior (refusal without --ack-plaintext-export) remains enforced cross-platform.
 - Ubuntu CI validates refusal path; Windows CI validates full escrow flow.
 
 Architectural impact:
 Clarifies trust boundary: vault-managed key escrow is a Windows capability.
 Cross-platform CI remains green without weakening safety guarantees.
+
 
