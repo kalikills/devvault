@@ -59,10 +59,17 @@ installer/output/
 # DevVault local drill artifacts (do not commit)
 .drill_source/
 .drill_work/
-drills/
 
 
 # Local CI reproduction environments
 .pkgvenv/
 .wslvenv/
 .wslpkgvenv/
+# DevVault drills (artifacts only; harness is tracked)
+drills/_runs/
+drills/20??-??-??/
+# DevVault drills — keep harness tracked
+!drills/restore/
+!drills/restore/**
+!drills/restore/README.md
+!drills/restore/run_restore_drills.ps1
