@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+
+import pytest
 from pathlib import Path
 
 
@@ -38,6 +40,8 @@ def test_key_export_refuses_without_ack(tmp_path: Path) -> None:
     assert not outp.exists()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="DPAPI vault-managed key is Windows-only")
+
 def test_key_export_succeeds_with_ack(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -68,3 +72,4 @@ def test_key_export_succeeds_with_ack(tmp_path: Path) -> None:
     assert payload["status"] == "ok"
     assert Path(payload["escrow_path"]).exists()
     assert outp.exists()
+
