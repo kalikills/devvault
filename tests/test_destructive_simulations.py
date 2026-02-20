@@ -147,3 +147,37 @@ def test_restore_after_source_destroyed(tmp_path: Path) -> None:
     actual = _read_tree_bytes(dst)
     assert actual == expected, f"restored tree mismatch: expected={sorted(expected.keys())} actual={sorted(actual.keys())}"
 
+
+@pytest.mark.destructive
+def test_restore_refuses_nonempty_destination(tmp_path: Path) -> None:
+    """Restore drift detection: refuse to restore into a non-empty destination directory."""
+
+    backup_root = tmp_path / "vault"
+    src = tmp_path / "src"
+    dst = tmp_path / "restore_dst"
+
+    backup_root.mkdir()
+    src.mkdir()
+    dst.mkdir()
+    _make_source_tree(src)
+
+    # Backup
+    r = _run_cli(["backup", "--json", str(src), str(backup_root)])
+    assert r.returncode == 0, f"backup failed:\\nSTDOUT:\\n{r.stdout}\\nSTDERR:\\n{r.stderr}"
+    snapshot_dir = _snapshot_dir_from_backup_json(r.stdout, backup_root)
+    assert snapshot_dir.exists() and snapshot_dir.is_dir(), f"snapshot_dir not found: {snapshot_dir}"
+
+    # Make destination non-empty (operator mistake simulation)
+    sentinel = dst / "DO_NOT_TOUCH.txt"
+    sentinel.write_text("sentinel", encoding="utf-8")
+
+    # Attempt restore: must refuse cleanly
+    rs = _run_cli(["restore", "--json", str(snapshot_dir), str(dst)])
+    assert rs.returncode != 0, "restore unexpectedly succeeded into non-empty destination"
+    combined = (rs.stdout + "\\n" + rs.stderr).lower()
+    assert "traceback" not in combined, f"restore printed traceback:\\n{rs.stdout}\\n{rs.stderr}"
+
+    # Destination must be unchanged (no partial writes)
+    assert sentinel.exists(), "restore modified destination despite refusal"
+    assert sentinel.read_text(encoding="utf-8") == "sentinel"
+

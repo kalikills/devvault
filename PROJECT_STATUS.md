@@ -48,8 +48,7 @@ These items increase operator trust and disaster confidence.
 - [x] Destructive scenario validation (corrupted snapshot refusal)
 - [x] Restore after source destruction (Gate 1 simulation)
 - Snapshot compatibility confidence  
-- Restore drift detection  
-
+- [x] Restore drift detection (refuse non-empty destination)
 Focus is no longer feature velocity.
 
 Focus is **predictable recovery under stress.**
@@ -127,5 +126,4 @@ Architecture risk is low.
 Reliability confidence is rising.  
 
 The remaining work is validation — not invention.
-
 
