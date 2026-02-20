@@ -90,6 +90,19 @@ Expansion is permitted only when it strengthens protection of irreplaceable data
 
 ## ENGINEERING OPERATING MODEL
 
+## SYSTEM: Reliability Validation Coverage
+
+Current enforced validations (test-backed, fail-closed):
+
+- Corrupted snapshot contents refuse verification/restore (Gate 3).
+- Restore succeeds after source destruction (Gate 1).
+- Restore refuses non-empty destination (drift detection).
+- Snapshot compatibility is explicit: unknown or missing manifest_version refuses.
+
+Implication:
+Launch gates are now backed by destructive simulations, not assumptions.
+
+
 Active principles:
 
 - fail closed  
@@ -110,3 +123,4 @@ Implication:
 Metadata visibility alone is no longer considered evidence of recoverability.
 
 Unreadable sources trigger fail-closed refusal.
+
