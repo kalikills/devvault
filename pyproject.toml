@@ -22,3 +22,8 @@ devvault-desktop = "devvault_desktop.__main__:main"
 where = ["."]
 include = ["devvault*", "scanner*", "devvault_desktop*"]
 
+[tool.pytest.ini_options]
+markers = [
+  "destructive: destructive simulations (corruption, deletion) for launch-gate validation"
+]
+

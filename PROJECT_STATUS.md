@@ -45,7 +45,7 @@ DevVault backups are now **cryptographically survivable.**
 These items increase operator trust and disaster confidence.
 
 - [x] Restore disaster drills
-- Destructive scenario validation  
+- [x] Destructive scenario validation (corrupted snapshot refusal)
 - Snapshot compatibility confidence  
 - Restore drift detection  
 
@@ -126,3 +126,4 @@ Architecture risk is low.
 Reliability confidence is rising.  
 
 The remaining work is validation — not invention.
+
