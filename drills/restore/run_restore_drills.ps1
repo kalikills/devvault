@@ -1,6 +1,21 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Deterministic Python resolution for drills (pwsh -NoProfile does not activate venv).
+# Preference order: repo venv -> explicit env override -> PATH python.
+$repoPy = Join-Path (Get-Location) ".venv-win\Scripts\python.exe"
+if (Test-Path -LiteralPath $repoPy) {
+  $py = $repoPy
+} elseif ($env:DEVVAULT_DRILL_PY -and (Test-Path -LiteralPath $env:DEVVAULT_DRILL_PY)) {
+  $py = $env:DEVVAULT_DRILL_PY
+} else {
+  $cmdPy = Get-Command python -ErrorAction SilentlyContinue
+  if (-not $cmdPy) { Fail "No python executable found (venv missing, DEVVAULT_DRILL_PY not set, python not on PATH)." }
+  $py = $cmdPy.Source
+}
+Write-Host ("[drill] Python: " + $py)
+
+
 function Info([string]$msg) { Write-Host ("[drill] " + $msg) }
 function Fail([string]$msg) { throw $msg }
 
@@ -48,9 +63,65 @@ function Invoke-DevVault([string[]]$cliArgs, [string]$outBase) {
   Info ("python " + ($cmd -join " "))
 
   # Use call operator to preserve argv array semantics
-  & $py @cmd 1> $stdoutFile 2> $stderrFile
+  # Execute via Process to capture stdout/stderr deterministically (file redirection can be brittle).
+  $psi = [System.Diagnostics.ProcessStartInfo]::new()
+  $psi.FileName = $py
+  $psi.WorkingDirectory = (Get-Location).Path
+  $psi.Environment["PYTHONPATH"] = $psi.WorkingDirectory
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError  = $true
+  $psi.Arguments = ($cmd | ForEach-Object { '"' + ($_ -replace '"','\"') + '"' }) -join ' '
+  Info ("args: " + $psi.Arguments)
+
+  $p = [System.Diagnostics.Process]::new()
+  $p.StartInfo = $psi
+  [void]$p.Start()
+  $stdout = $p.StandardOutput.ReadToEnd()
+  $stderr = $p.StandardError.ReadToEnd()
+  $p.WaitForExit()
+
+  # Persist logs for postmortem
+  [System.IO.File]::WriteAllText($stdoutFile, $stdout)
+  [System.IO.File]::WriteAllText($stderrFile, $stderr)
+
+  return $p.ExitCode
   return $LASTEXITCODE
 }
+
+function Invoke-DevVaultJson([string[]]$cliArgs, [string]$logBase) {
+  $code = Invoke-DevVault $cliArgs $logBase
+  if ($code -ne 0) { Fail ("DevVault failed (exit=" + $code + "). See " + $logBase + ".out.txt/.err.txt") }
+
+  $outFile = $logBase + ".out.txt"
+  if (-not (Test-Path -LiteralPath $outFile)) { Fail ("Missing JSON output file: " + $outFile) }
+
+  $raw = Get-Content -LiteralPath $outFile -Raw
+  if (-not $raw -or $raw.Trim().Length -eq 0) {
+    $errFile = $logBase + ".err.txt"
+    $err = ""
+    if (Test-Path -LiteralPath $errFile) {
+      $err = [string](Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue)
+    }
+    $errStr = [string]$err
+    $errLen = $errStr.Length
+    $preview = ""
+    if ($errLen -gt 0) { $preview = $errStr.Substring(0, [Math]::Min(200, $errLen)) }
+    Fail ("Empty JSON output: " + $outFile + " (exit=" + $code + ", err_len=" + $errLen + "). STDERR preview: " + $preview)
+  }
+
+  # Accept "noisy" output by extracting the first JSON object if needed.
+  $start = $raw.IndexOf("{")
+  if ($start -lt 0) { Fail ("No JSON object found in: " + $outFile) }
+  $jsonText = $raw.Substring($start)
+
+  try {
+    return ($jsonText | ConvertFrom-Json)
+  } catch {
+    Fail ("Invalid JSON in: " + $outFile)
+  }
+}
+
 
 function Get-VaultDirs([string]$vaultRoot) {
   if (-not (Test-Path $vaultRoot)) { return @() }
@@ -82,35 +153,15 @@ function Drill-D1_SourceDestroyedAfterBackup([string]$runDir, [string]$vaultRoot
   New-Item -ItemType Directory -Force -Path $vaultRoot | Out-Null
 
   $backupLog = Join-Path $runDir "backup.log.txt"
-  $code = Invoke-DevVault @("backup", $src, $vaultRoot, "--json") $backupLog
-  if ($code -ne 0) { Fail ("Backup failed (exit=" + $code + "). See " + $backupLog + ".out.txt/.err.txt") }
+  $j = Invoke-DevVaultJson @("backup", $src, $vaultRoot, "--json") $backupLog
+  Info ("Backup logs: " + $backupLog + ".out.txt / " + $backupLog + ".err.txt")
+  # (handled by Invoke-DevVaultJson)
 
-  # Prefer authoritative snapshot path from backup JSON output (avoid guessing via vault dir listing)
+  # SnapshotDir (authoritative): trust backup JSON output.
   $snap = ""
-  try {
-    $raw = Get-Content -LiteralPath ($backupLog + ".out.txt") -Raw
-    $j = $raw | ConvertFrom-Json
-    if ($j -and $j.backup_path) { $snap = [string]$j.backup_path }
-  } catch { }
-
-
-  $after = Get-VaultDirs $vaultRoot
-  if (-not $snap -or $snap.Trim().Length -eq 0) { $snap = Find-NewSnapshot $before $after }
-  if (-not $snap -or $snap.Trim().Length -eq 0) {
-    # Fallback: backup may reuse an existing snapshot dir; pick most recently modified vault dir.
-    $latestDir = $null
-    if (Test-Path $vaultRoot) {
-      $latestDir = Get-ChildItem -LiteralPath $vaultRoot -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    }
-    if ($latestDir) {
-      $snap = $latestDir.FullName
-    }
-  }
+  if ($j -and $j.backup_path) { $snap = [string]$j.backup_path }
+  if (-not $snap -or $snap.Trim().Length -eq 0) { Fail "No snapshot directory could be resolved (backup_path missing)." }
   Info ("SnapshotDir: " + $snap)
-
-  if (-not $snap -or $snap.Trim().Length -eq 0) {
-    Fail "No snapshot directory could be resolved (snap is empty)."
-  }
 
   $verifyLog = Join-Path $runDir "verify.log.txt"
   $code = Invoke-DevVault @("verify", $snap, "--json") $verifyLog
