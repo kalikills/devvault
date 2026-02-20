@@ -85,8 +85,17 @@ function Drill-D1_SourceDestroyedAfterBackup([string]$runDir, [string]$vaultRoot
   $code = Invoke-DevVault @("backup", $src, $vaultRoot, "--json") $backupLog
   if ($code -ne 0) { Fail ("Backup failed (exit=" + $code + "). See " + $backupLog + ".out.txt/.err.txt") }
 
+  # Prefer authoritative snapshot path from backup JSON output (avoid guessing via vault dir listing)
+  $snap = ""
+  try {
+    $raw = Get-Content -LiteralPath ($backupLog + ".out.txt") -Raw
+    $j = $raw | ConvertFrom-Json
+    if ($j -and $j.backup_path) { $snap = [string]$j.backup_path }
+  } catch { }
+
+
   $after = Get-VaultDirs $vaultRoot
-  $snap = Find-NewSnapshot $before $after
+  if (-not $snap -or $snap.Trim().Length -eq 0) { $snap = Find-NewSnapshot $before $after }
   if (-not $snap -or $snap.Trim().Length -eq 0) {
     # Fallback: backup may reuse an existing snapshot dir; pick most recently modified vault dir.
     $latestDir = $null
