@@ -1107,3 +1107,13 @@ Clarifies trust boundary: vault-managed key escrow is a Windows capability.
 Cross-platform CI remains green without weakening safety guarantees.
 
 
+
+## 2026-02-20 — CLI module entrypoint + deterministic restore drills
+
+- Fixed CLI module contract: python -m devvault.cli ... now executes main() via __main__ guard.
+- Restore drill SnapshotDir resolution is now authoritative: trusts backup JSON ackup_path (no vault dir diffing).
+- Restore drill runner stability: deterministic venv python selection, stable log vars; removed noisy args/log path output.
+
+Architectural impact:
+Eliminates false-negative drills caused by missing CLI entrypoint; drills now validate disaster recovery deterministically using the system’s own source of truth.
+
