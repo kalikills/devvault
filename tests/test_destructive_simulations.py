@@ -96,3 +96,54 @@ def test_corrupted_snapshot_refuses(tmp_path: Path) -> None:
         assert "traceback" not in combined, f"verify printed traceback:\\n{v.stdout}\\n{v.stderr}"
 
 
+
+def _read_tree_bytes(root: Path) -> dict[str, bytes]:
+    """Return a stable mapping of relative posix paths -> file bytes."""
+    out: dict[str, bytes] = {}
+    for p in root.rglob("*"):
+        if p.is_file():
+            rel = p.relative_to(root).as_posix()
+            out[rel] = p.read_bytes()
+    return out
+
+
+@pytest.mark.destructive
+def test_restore_after_source_destroyed(tmp_path: Path) -> None:
+    """Gate 1: restore must succeed even if the original source is destroyed after backup."""
+
+    backup_root = tmp_path / "vault"
+    src = tmp_path / "src"
+    dst = tmp_path / "restore_dst"
+
+    backup_root.mkdir()
+    src.mkdir()
+    dst.mkdir()
+    _make_source_tree(src)
+
+    expected = _read_tree_bytes(src)
+    assert expected, "expected source tree is empty"
+
+    # 1) Backup
+    r = _run_cli(["backup", "--json", str(src), str(backup_root)])
+    assert r.returncode == 0, f"backup failed:\\nSTDOUT:\\n{r.stdout}\\nSTDERR:\\n{r.stderr}"
+    snapshot_dir = _snapshot_dir_from_backup_json(r.stdout, backup_root)
+    assert snapshot_dir.exists() and snapshot_dir.is_dir(), f"snapshot_dir not found: {snapshot_dir}"
+
+    # 2) Destroy the source after backup
+    # (rmdir via pathlib; should remove entire tree on Windows)
+    for p in sorted(src.rglob("*"), reverse=True):
+        if p.is_file():
+            p.unlink()
+        else:
+            p.rmdir()
+    src.rmdir()
+    assert not src.exists(), "source directory still exists after destruction step"
+
+    # 3) Restore into empty destination
+    rs = _run_cli(["restore", "--json", str(snapshot_dir), str(dst)])
+    assert rs.returncode == 0, f"restore failed:\\nSTDOUT:\\n{rs.stdout}\\nSTDERR:\\n{rs.stderr}"
+
+    # 4) Verify restored bytes match the original expected content
+    actual = _read_tree_bytes(dst)
+    assert actual == expected, f"restored tree mismatch: expected={sorted(expected.keys())} actual={sorted(actual.keys())}"
+
