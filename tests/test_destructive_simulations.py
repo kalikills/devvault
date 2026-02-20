@@ -181,3 +181,68 @@ def test_restore_refuses_nonempty_destination(tmp_path: Path) -> None:
     assert sentinel.exists(), "restore modified destination despite refusal"
     assert sentinel.read_text(encoding="utf-8") == "sentinel"
 
+
+def _load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_json(path: Path, obj: object) -> None:
+    path.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+
+
+@pytest.mark.destructive
+def test_verify_refuses_unsupported_manifest_version(tmp_path: Path) -> None:
+    """Snapshot compatibility: unknown manifest_version must fail closed."""
+
+    backup_root = tmp_path / "vault"
+    src = tmp_path / "src"
+    backup_root.mkdir()
+    src.mkdir()
+    _make_source_tree(src)
+
+    r = _run_cli(["backup", "--json", str(src), str(backup_root)])
+    assert r.returncode == 0, f"backup failed:\\nSTDOUT:\\n{r.stdout}\\nSTDERR:\\n{r.stderr}"
+    snapshot_dir = _snapshot_dir_from_backup_json(r.stdout, backup_root)
+    assert snapshot_dir.exists() and snapshot_dir.is_dir()
+
+    manifest = snapshot_dir / "manifest.json"
+    assert manifest.exists(), "manifest.json missing from snapshot"
+
+    m = _load_json(manifest)
+    assert "manifest_version" in m
+    m["manifest_version"] = 999
+    _write_json(manifest, m)
+
+    v = _run_cli(["verify", "--json", str(snapshot_dir)])
+    assert v.returncode != 0, "verify unexpectedly succeeded with unsupported manifest_version"
+    combined = (v.stdout + "\\n" + v.stderr).lower()
+    assert "traceback" not in combined, f"verify printed traceback:\\n{v.stdout}\\n{v.stderr}"
+
+
+@pytest.mark.destructive
+def test_verify_refuses_missing_manifest_version(tmp_path: Path) -> None:
+    """Snapshot compatibility: missing manifest_version must fail closed."""
+
+    backup_root = tmp_path / "vault"
+    src = tmp_path / "src"
+    backup_root.mkdir()
+    src.mkdir()
+    _make_source_tree(src)
+
+    r = _run_cli(["backup", "--json", str(src), str(backup_root)])
+    assert r.returncode == 0, f"backup failed:\\nSTDOUT:\\n{r.stdout}\\nSTDERR:\\n{r.stderr}"
+    snapshot_dir = _snapshot_dir_from_backup_json(r.stdout, backup_root)
+    assert snapshot_dir.exists() and snapshot_dir.is_dir()
+
+    manifest = snapshot_dir / "manifest.json"
+    assert manifest.exists(), "manifest.json missing from snapshot"
+
+    m = _load_json(manifest)
+    m.pop("manifest_version", None)
+    _write_json(manifest, m)
+
+    v = _run_cli(["verify", "--json", str(snapshot_dir)])
+    assert v.returncode != 0, "verify unexpectedly succeeded with missing manifest_version"
+    combined = (v.stdout + "\\n" + v.stderr).lower()
+    assert "traceback" not in combined, f"verify printed traceback:\\n{v.stdout}\\n{v.stderr}"
+

@@ -47,7 +47,7 @@ These items increase operator trust and disaster confidence.
 - [x] Restore disaster drills
 - [x] Destructive scenario validation (corrupted snapshot refusal)
 - [x] Restore after source destruction (Gate 1 simulation)
-- Snapshot compatibility confidence  
+- [x] Snapshot compatibility confidence (manifest_version fail-closed)
 - [x] Restore drift detection (refuse non-empty destination)
 Focus is no longer feature velocity.
 
