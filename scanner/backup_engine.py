@@ -9,6 +9,7 @@ from uuid import uuid4
 from scanner.checksum import hash_path
 from scanner.manifest_integrity import add_integrity_block
 from scanner.integrity_keys import load_manifest_hmac_key
+from scanner.vault_key_windows import init_manifest_hmac_key_if_missing
 from scanner.ports.filesystem import FileSystemPort
 from scanner.models.backup import BackupRequest, PreflightReport
 
@@ -44,7 +45,6 @@ class BackupEngine:
         """
         src_root = request.source_root.expanduser().resolve()
         backup_root = request.backup_root.expanduser().resolve()
-
         file_count = 0
         total_bytes = 0
         skipped_symlinks = 0
@@ -205,6 +205,8 @@ class BackupEngine:
 
         # Phase 3 — atomic finalize
         self._fs.rename(plan.incomplete_path, plan.backup_path)
+        # Windows: ensure vault-managed manifest HMAC key exists for escrow export
+        init_manifest_hmac_key_if_missing(backup_root)
 
         finished_at = datetime.now(timezone.utc)
 
