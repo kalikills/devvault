@@ -55,3 +55,9 @@ dist/
 # Inno Setup output
 installer/output/
 *.bak*
+
+# DevVault local drill artifacts (do not commit)
+.drill_source/
+.drill_work/
+drills/
+
