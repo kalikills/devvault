@@ -81,6 +81,25 @@ Fail closed always.
 
 ---
 
+
+---
+
+### Gate 5 — Coverage Assurance (Launch-Required)
+
+DevVault must prevent silent exclusion of likely irreplaceable work.
+
+Requirements:
+
+- First-run discovery scan surfaces candidate project directories.
+- Backup is blocked if new candidate projects are detected and not acknowledged.
+- Operator must explicitly:
+  - Add project to protection, or
+  - Record an ignore decision.
+- Acknowledgements are persistent and auditable.
+- Detection logic must be bounded and deterministic.
+
+Goal:
+> No irreplaceable work is silently left unprotected.
 ### Gate 4 — Release Candidate Hardening
 Final stabilization pass:
 
@@ -126,4 +145,5 @@ Architecture risk is low.
 Reliability confidence is rising.  
 
 The remaining work is validation — not invention.
+
 

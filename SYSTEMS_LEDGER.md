@@ -57,6 +57,26 @@ Disk capacity is no longer an operator concern — it is a system invariant.
 
 ---
 
+
+---
+
+## SYSTEM: Coverage Assurance
+
+DevVault must detect likely irreplaceable project directories and prevent silent non-protection.
+
+Behavior:
+
+- Performs bounded discovery scan for candidate project directories.
+- Compares detected candidates against configured protected roots.
+- If uncovered candidates exist:
+  - Backup is blocked.
+  - Operator must explicitly acknowledge by:
+    - Adding to protection, or
+    - Recording ignore decision.
+- Decisions are persisted and auditable.
+
+Implication:
+DevVault enforces protection awareness, not just backup execution.
 ## SYSTEM: Desktop Layer
 
 Role:
@@ -123,4 +143,5 @@ Implication:
 Metadata visibility alone is no longer considered evidence of recoverability.
 
 Unreadable sources trigger fail-closed refusal.
+
 
