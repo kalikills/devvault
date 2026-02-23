@@ -268,8 +268,12 @@ class DevVaultApp(tk.Tk):
 
                 if scan_roots:
                     cov = compute_uncovered_candidates(scan_roots=scan_roots, depth=4, top=30)
-                    if cov.uncovered:
-                        dlg = CoverageDialog(self, uncovered=cov.uncovered)
+                    gate = evaluate_first_run_gate(
+                        first_run_done=False,
+                        uncovered_candidates=cov.uncovered,
+                    )
+                    if not gate.allowed:
+                        dlg = CoverageDialog(self, uncovered=list(gate.uncovered_candidates))
                         decision = dlg.show()
                         if decision is None:
                             # Fail closed: quit app rather than allow unsafe operation.
@@ -687,4 +691,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
 
