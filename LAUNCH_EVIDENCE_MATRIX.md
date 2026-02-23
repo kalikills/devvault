@@ -44,7 +44,8 @@ Note (current): Desktop enforcement wired (Option B). Automated evidence tests s
 | Requirement | Evidence Type | Source | Status |
 |------------|--------------|--------|--------|
 | First-run discovery scan | Automated + manual | (TBD) | 🔲 |
-| Backup blocked until acknowledgement | Automated test | (TBD) | 🔲 |
-| Acknowledgement persistence | Automated test | (TBD) | 🔲 |
-| Bounded deterministic detection | Automated test | (TBD) | 🔲 |
+| Backup blocked until acknowledgement | Automated test | tests/test_coverage_assurance.py | ✅ |
+| Acknowledgement persistence | Automated test | tests/test_coverage_assurance.py | ✅ |
+| Bounded deterministic detection | Automated test | tests/test_coverage_assurance.py | ✅ |
+
 
