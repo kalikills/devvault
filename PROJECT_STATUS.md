@@ -81,11 +81,19 @@ Fail closed always.
 
 ---
 
+### Gate 4 — Release Candidate Hardening
+Final stabilization pass:
+
+- refusal clarity
+- [x] CLI contract stability
+- desktop boundary safety
+- log signal quality
+
+No architectural churn beyond this point.
 
 ---
 
 ### Gate 5 — Coverage Assurance (Launch-Required)
-
 DevVault must prevent silent exclusion of likely irreplaceable work.
 
 Requirements:
@@ -100,18 +108,23 @@ Requirements:
 
 Goal:
 > No irreplaceable work is silently left unprotected.
-### Gate 4 — Release Candidate Hardening
-Final stabilization pass:
-
-- refusal clarity  
-- [x] CLI contract stability
-- desktop boundary safety  
-- log signal quality  
-
-No architectural churn beyond this point.
 
 ---
 
+### Final Gate — Clean Machine Validation (No Dev Tools)
+Run DevVault on a separate “main” home computer with **no coding/dev setup** to validate true operator independence.
+
+Requirements:
+
+- Install DevVault as an operator would (no repo, no venv).
+- Use an external vault drive (or copied vault folder).
+- Run: backup → verify → restore.
+- Any missing dependency, path assumption, or environment coupling is **release-blocking**.
+
+Goal:
+> Prove the system works in a real non-dev environment.
+
+---
 ## Architecture Posture
 
 System behavior prioritizes:
@@ -145,5 +158,7 @@ Architecture risk is low.
 Reliability confidence is rising.  
 
 The remaining work is validation — not invention.
+
+
 
 

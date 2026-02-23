@@ -50,9 +50,11 @@ Note: Desktop enforcement wired (Option B). First-run gate is now pure + test-ba
 | Acknowledgement persistence | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Bounded deterministic detection | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Staleness reminder warning (7+ days) | Automated + manual | tests/test_coverage_assurance.py (backup_age_days) + desktop log | ✅ |
+---
 
+## Final Gate — Clean Machine Validation (No Dev Tools)
 
-
-
-
+| Requirement | Evidence Type | Source | Status |
+|------------|--------------|--------|--------|
+| Install + run on clean home machine (no dev tools) | Manual validation | Operator checklist + final pre-launch run | 🔲 |
 
