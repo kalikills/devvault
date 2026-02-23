@@ -1117,3 +1117,11 @@ Cross-platform CI remains green without weakening safety guarantees.
 Architectural impact:
 Eliminates false-negative drills caused by missing CLI entrypoint; drills now validate disaster recovery deterministically using the system’s own source of truth.
 
+
+## 2026-02-23 — Desktop patch safety: guard against file truncation during scripted edits
+
+- Incident: app.py was unintentionally written as empty due to continuing after a failed transform (regex timeout / unset variable).
+- Mitigation pattern: refuse-to-write on transform failure; apply bounded segment edits; verify non-empty + expected line count immediately after file writes.
+
+Architectural impact:
+Hardens operator-facing desktop layer against tooling-induced corruption by enforcing deterministic, fail-closed edit discipline.
