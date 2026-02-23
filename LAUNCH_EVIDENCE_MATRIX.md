@@ -19,6 +19,7 @@ Map each launch gate to measurable proof before shipping.
 |------------|--------------|--------|--------|
 | Key escrow export | Automated test | tests | ✅ |
 | Operator drill: backup→restore→hash verify | Manual drill (repeatable) | RUNBOOK.md + drills/operator_independence/run_gate2_helper.ps1 + evidence/2026-02-23 | ✅ |
+| Restore using escrow (same machine) | Manual drill (repeatable) | devvault cli restore/verify --escrow + evidence/2026-02-23 | ✅ |
 | Restore using escrow on separate machine | Manual drill | runbook + escrow.json | 🔲 |
 
 ---
@@ -49,6 +50,7 @@ Note: Desktop enforcement wired (Option B). First-run gate is now pure + test-ba
 | Acknowledgement persistence | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Bounded deterministic detection | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Staleness reminder warning (7+ days) | Automated + manual | tests/test_coverage_assurance.py (backup_age_days) + desktop log | ✅ |
+
 
 
 
