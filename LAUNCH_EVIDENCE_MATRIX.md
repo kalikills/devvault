@@ -39,15 +39,16 @@ Map each launch gate to measurable proof before shipping.
 
 ## Gate 5 — Coverage Assurance
 
-Note (current): Desktop enforcement wired (Option B). Automated evidence tests still required to mark ✅.
+Note: Desktop enforcement wired (Option B). First-run gate is now pure + test-backed; desktop wires the decision + dialog.
 
 | Requirement | Evidence Type | Source | Status |
 |------------|--------------|--------|--------|
-| First-run discovery scan | Automated + manual | devvault_desktop/app.py (first-run), tests pending | 🔲 |
+| First-run discovery scan | Automated + manual | devvault_desktop/first_run_gate.py + tests/test_first_run_gate.py + devvault_desktop/app.py | ✅ |
 | Backup blocked until acknowledgement | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Acknowledgement persistence | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Bounded deterministic detection | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Staleness reminder warning (7+ days) | Automated + manual | tests/test_coverage_assurance.py (backup_age_days) + desktop log | ✅ |
+
 
 
 
