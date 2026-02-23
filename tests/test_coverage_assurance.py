@@ -74,3 +74,22 @@ def test_ignored_candidate_suppresses_warning(tmp_path):
     )
 
     assert result.uncovered == []
+
+from devvault_desktop.config import backup_age_days
+
+
+def test_backup_age_days_exact_difference():
+    last = "2026-02-01T00:00:00+00:00"
+    now = "2026-02-08T00:00:00+00:00"
+    assert backup_age_days(last, now) == 7
+
+
+def test_backup_age_days_handles_naive_timestamp():
+    last = "2026-02-01T00:00:00"
+    now = "2026-02-03T00:00:00+00:00"
+    assert backup_age_days(last, now) == 2
+
+
+def test_backup_age_days_invalid_returns_none():
+    assert backup_age_days("not-a-date") is None
+    assert backup_age_days("") is None

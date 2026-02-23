@@ -14,6 +14,9 @@ from devvault_desktop.snapshot_picker import SnapshotPicker
 from devvault_desktop.vault_gate import require_vault_ready
 from devvault_desktop.coverage_assurance import compute_uncovered_candidates
 from devvault_desktop.coverage_dialog import CoverageDialog
+from devvault_desktop.config import is_coverage_first_run_done, set_coverage_first_run_done
+from devvault_desktop.config import get_last_backup_at_utc, set_last_backup_at_utc
+
 
 
 from devvault_desktop.runner import (
@@ -248,6 +251,67 @@ class DevVaultApp(tk.Tk):
         self._log("Choose an action: Make Backup or Restore Backup.")
         self._log("Vault open and ready....")
 
+        # Coverage First-Run Enforcement (Gate 5)
+        # First launch must prevent silent exclusion of likely irreplaceable work.
+        try:
+            if not is_coverage_first_run_done():
+                scan_roots: list[Path] = []
+                candidates = [
+                    Path("C:/dev"),
+                    Path.home() / "dev",
+                    Path.home() / "Documents",
+                    Path.home() / "Desktop",
+                ]
+                for r in candidates:
+                    if r.exists() and r.is_dir():
+                        scan_roots.append(r)
+
+                if scan_roots:
+                    cov = compute_uncovered_candidates(scan_roots=scan_roots, depth=4, top=30)
+                    if cov.uncovered:
+                        dlg = CoverageDialog(self, uncovered=cov.uncovered)
+                        decision = dlg.show()
+                        if decision is None:
+                            # Fail closed: quit app rather than allow unsafe operation.
+                            messagebox.showerror(
+                                "Coverage Required",
+                                "DevVault requires a coverage decision before use.\n\nApp will now close.",
+                            )
+                            raise SystemExit(2)
+
+                set_coverage_first_run_done(True)
+        except SystemExit:
+            raise
+        except Exception as e:
+            # Fail closed: if coverage check fails, refuse to start.
+            messagebox.showerror("Coverage Check Failed", str(e))
+            raise SystemExit(2)
+
+        # Backup Staleness Reminder
+        # If you haven't backed up in a while, DevVault must tell you.
+        try:
+            from datetime import datetime, timezone
+
+            protected = get_protected_roots()
+            last_s = get_last_backup_at_utc().strip()
+            if protected and last_s:
+                try:
+                    last = datetime.fromisoformat(last_s)
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    age_days = (datetime.now(timezone.utc) - last).days
+                    if age_days >= 7:
+                        warn = (
+                            f"WARNING: Last backup was {age_days} days ago. "
+                            "Run a backup to stay protected."
+                        )
+                        self.warn_label.configure(text=warn)
+                        self._log(warn)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     # ------------------------------------------------------------
     # UI helpers
     # ------------------------------------------------------------
@@ -404,6 +468,11 @@ class DevVaultApp(tk.Tk):
 
                 def done() -> None:
                     self._set_status(f"Backup complete: {backup_path}")
+                    try:
+                        from datetime import datetime, timezone
+                        set_last_backup_at_utc(datetime.now(timezone.utc).isoformat())
+                    except Exception:
+                        pass
                     messagebox.showinfo("Backup Complete", f"Backup created:\n{backup_path}")
                     self._set_busy(False, status="Vault open and ready....")
 

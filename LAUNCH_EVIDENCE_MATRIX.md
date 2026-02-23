@@ -43,9 +43,11 @@ Note (current): Desktop enforcement wired (Option B). Automated evidence tests s
 
 | Requirement | Evidence Type | Source | Status |
 |------------|--------------|--------|--------|
-| First-run discovery scan | Automated + manual | (TBD) | 🔲 |
+| First-run discovery scan | Automated + manual | devvault_desktop/app.py (first-run), tests pending | 🔲 |
 | Backup blocked until acknowledgement | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Acknowledgement persistence | Automated test | tests/test_coverage_assurance.py | ✅ |
 | Bounded deterministic detection | Automated test | tests/test_coverage_assurance.py | ✅ |
+| Staleness reminder warning (7+ days) | Automated + manual | tests/test_coverage_assurance.py (backup_age_days) + desktop log | ✅ |
+
 
 

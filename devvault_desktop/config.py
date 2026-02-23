@@ -110,6 +110,59 @@ def ignore_candidate(path: str) -> None:
         items.append(p)
     cfg["ignored_candidates"] = items
     save_config(cfg)
+
+
+def is_coverage_first_run_done() -> bool:
+    cfg = load_config()
+    return bool(cfg.get("coverage_first_run_done", False))
+
+
+def set_coverage_first_run_done(done: bool = True) -> None:
+    cfg = load_config()
+    cfg["coverage_first_run_done"] = bool(done)
+    save_config(cfg)
+
+
+def get_last_backup_at_utc() -> str:
+    cfg = load_config()
+    v = cfg.get("last_backup_at_utc", "")
+    return v if isinstance(v, str) else ""
+
+
+
+
+def backup_age_days(last_iso_utc: str, now_iso_utc: str | None = None) -> int | None:
+    """
+    Return whole-day age between now and last backup time.
+
+    - Returns None if parsing fails or last_iso_utc is empty.
+    - Treats naive timestamps as UTC.
+    """
+    if not last_iso_utc or not isinstance(last_iso_utc, str):
+        return None
+    try:
+        from datetime import datetime, timezone
+
+        last = datetime.fromisoformat(last_iso_utc)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+
+        if now_iso_utc:
+            now = datetime.fromisoformat(now_iso_utc)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
+        else:
+            now = datetime.now(timezone.utc)
+
+        return (now - last).days
+    except Exception:
+        return None
+
+def set_last_backup_at_utc(iso_utc: str) -> None:
+    cfg = load_config()
+    cfg["last_backup_at_utc"] = str(iso_utc)
+    save_config(cfg)
+
 def set_vault_dir(vault_dir: str) -> None:
     cfg = load_config()
     cfg["vault_dir"] = vault_dir
