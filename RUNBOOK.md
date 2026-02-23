@@ -332,3 +332,61 @@ Release is prohibited if any of the following are true:
 Trust is harder to rebuild than software.
 
 ------------------------------------------------------------
+------------------------------------------------------------
+
+# OPERATIONAL DRILLS
+------------------------------------------------------------
+
+## Gate 2 — Operator Independence Drill (Restore without original machine)
+
+**Purpose**
+Prove a knowledgeable operator can restore data using only:
+- the vault folder
+- a snapshot identifier/path
+- an exported escrow key file
+
+**Pass criteria**
+- Restore succeeds without relying on the original machine state.
+- Restored bytes match a known fixture baseline (SHA256).
+
+**Evidence artifacts**
+Store under:
+drills/operator_independence/evidence/<YYYY-MM-DD>/
+
+Required outputs:
+- fixture_hashes_before.txt
+- escrow.json
+- fixture_hashes_after.txt
+- notes.txt (record exact commands + snapshot id/path)
+
+**Procedure (checklist)**
+
+1) Prepare fixture + baseline hashes (Machine A)
+   - Run:
+     drills/operator_independence/run_gate2_helper.ps1 -Mode Prepare
+
+2) Create backup snapshot of the fixture (Machine A)
+   - Back up:
+     drills/operator_independence/evidence/<date>/fixture_src
+   - Record snapshot identifier/path in notes.txt
+
+3) Export escrow key (Machine A)
+   - Export vault-managed manifest HMAC key to:
+     drills/operator_independence/evidence/<date>/escrow.json
+   - Record exact command line in notes.txt
+
+4) Restore on “new machine” context (Machine B preferred)
+   - Copy/connect vault folder
+   - Copy escrow.json
+   - Restore snapshot into:
+     drills/operator_independence/evidence/<date>/restore_dst
+
+5) Verify restored bytes (Machine B)
+   - Run:
+     drills/operator_independence/run_gate2_helper.ps1 -Mode Verify
+
+**Fail-closed rules**
+- If restore requires original machine state → FAIL Gate 2.
+- If hashes mismatch → treat as trust-threatening (SEV-1). Preserve evidence.
+
+
