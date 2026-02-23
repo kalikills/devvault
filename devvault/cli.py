@@ -19,12 +19,14 @@ from scanner.verify_engine import VerifyEngine, VerifyRequest
 from scanner.errors import DevVaultRefusal
 from scanner.integrity_keys import load_manifest_hmac_key
 _COMMANDS = {"scan", "backup", "restore", "verify", "preflight", "key"}
+
+
 def _rewrite_argv_for_backcompat(argv: list[str]) -> list[str]:
     """
     Backwards-compatible behavior:
-      - `devvault` defaults to `devvault scan`
-      - `devvault <roots...>` becomes `devvault scan <roots...>`
-    While allowing real subcommands like `devvault backup ...`.
+      - devvault defaults to devvault scan
+      - devvault <roots...> becomes devvault scan <roots...>
+    While allowing real subcommands like devvault backup ....
     """
     if not argv:
         return ["scan"]
@@ -40,20 +42,61 @@ def _rewrite_argv_for_backcompat(argv: list[str]) -> list[str]:
     if first_non_flag in _COMMANDS:
         return argv
 
-    # Otherwise, treat as scan roots: insert 'scan' before first non-flag token.
-    out: list[str] = []
-    inserted = False
-    for tok in argv:
-        if not inserted and not tok.startswith("-"):
-            out.append("scan")
-            inserted = True
-        out.append(tok)
+    # If the argv looks like roots only, rewrite to scan <roots...>
+    return ["scan", *argv]
 
-    if not inserted:
-        # argv was all flags; default to scan
-        out.insert(0, "scan")
-    return out
 
+def _enforce_coverage_gate_cli_or_exit() -> None:
+    """Gate 5 — Coverage Assurance (CLI).
+
+    Fail-closed (when enabled): refuse backup if uncovered candidate project directories exist and have not been acknowledged/ignored.
+    Uses the same persisted decisions as Desktop (config.json).
+
+    Note: CLI enforcement is gated by DEVVAULT_ENFORCE_COVERAGE=1 to keep tests deterministic.
+    """
+    import os
+    import sys
+    from pathlib import Path
+
+    if os.environ.get("DEVVAULT_ENFORCE_COVERAGE", "") not in ("1", "true", "TRUE", "yes", "YES"):
+        return
+
+    try:
+        # UI-free module; shares the same config store used by Desktop.
+        from devvault_desktop.coverage_assurance import compute_uncovered_candidates
+    except Exception as e:
+        print(f"REFUSED (coverage): cannot load coverage assurance: {e}", file=sys.stderr)
+        raise SystemExit(2)
+
+    try:
+        scan_roots: list[Path] = []
+        candidates = [
+            Path("C:/dev"),
+            Path.home() / "dev",
+            Path.home() / "Documents",
+            Path.home() / "Desktop",
+        ]
+        for r in candidates:
+            if r.exists() and r.is_dir():
+                scan_roots.append(r)
+
+        if not scan_roots:
+            return
+
+        cov = compute_uncovered_candidates(scan_roots=scan_roots, depth=4, top=30)
+        if cov.uncovered:
+            print("REFUSED: Coverage decision required (Gate 5).", file=sys.stderr)
+            print("Uncovered candidate project directories:", file=sys.stderr)
+            for pth in cov.uncovered:
+                print(f"- {pth}", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("Resolve in DevVault Desktop: Add to protection or Ignore.", file=sys.stderr)
+            raise SystemExit(2)
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"REFUSED (coverage): {e}", file=sys.stderr)
+        raise SystemExit(2)
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if argv is None:
@@ -302,6 +345,7 @@ def main(argv: list[str] | None = None) -> int:
             fs = OSFileSystem()
             engine = BackupEngine(fs)
 
+            _enforce_coverage_gate_cli_or_exit()
             req = BackupRequest(
                 source_root=_p(args.source_root),
                 backup_root=_p(args.backup_root),
@@ -481,6 +525,9 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
 
 
 
