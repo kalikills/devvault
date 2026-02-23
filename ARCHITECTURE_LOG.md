@@ -1,5 +1,15 @@
 # DevVault — BUILD LOG
 
+## 2026-02-23 — Final Gate Added: Clean Machine Validation (No Dev Tools)
+
+- Added an explicit release-blocking validation gate: DevVault must run on a separate “main” home computer with no repo/venv/dev tooling.
+- Purpose: detect environment coupling (missing dependencies, PATH assumptions, dev-only imports, implicit permissions, or machine-specific paths).
+- Definition of done: operator install + external vault drive (or copied vault) + backup → verify → restore succeeds.
+- Any missing dependency or environment assumption is treated as release-blocking defect.
+
+Architectural impact:
+Shifts confidence from “works in dev” to “works as an operator,” closing the most common survivability gap in trust infrastructure.
+
 ## Project Vision
 DevVault is a professional-grade Python CLI designed to help developers identify, protect, and back up development projects with safety-first architecture.
 
@@ -1125,3 +1135,4 @@ Eliminates false-negative drills caused by missing CLI entrypoint; drills now va
 
 Architectural impact:
 Hardens operator-facing desktop layer against tooling-induced corruption by enforcing deterministic, fail-closed edit discipline.
+
