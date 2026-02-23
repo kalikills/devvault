@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
+from contextlib import contextmanager
 import sys
 from pathlib import Path as _Path
 
@@ -118,6 +120,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     restore.add_argument("destination_dir", help="Empty destination directory to restore into.")
     restore.add_argument("--json", action="store_true", help="Output results as JSON.")
     restore.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
+    restore.add_argument("--escrow", type=str, default="", help="Escrow JSON (base64 manifest HMAC key) for operator independence.")
 
     # -------------------------
     # verify
@@ -126,6 +129,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     verify.add_argument("snapshot_dir", help="Snapshot directory to verify.")
     verify.add_argument("--json", action="store_true", help="Output results as JSON.")
     verify.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
+    verify.add_argument("--escrow", type=str, default="", help="Escrow JSON (base64 manifest HMAC key) for operator independence.")
 
         # -------------------------
     # key
@@ -145,6 +149,41 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     export.add_argument("--output", type=str, default="", help="Write output to a file instead of printing to stdout.")
     return parser.parse_args(argv)
 
+
+def _load_escrow_manifest_key_hex(escrow_path: _Path) -> str:
+    try:
+        raw = escrow_path.read_text(encoding="utf-8")
+        obj = json.loads(raw)
+    except Exception as e:
+        raise DevVaultRefusal(f"Invalid escrow file (unreadable/invalid JSON): {escrow_path}") from e
+
+    b64 = obj.get("manifest_hmac_key_b64")
+    if not isinstance(b64, str) or not b64.strip():
+        raise DevVaultRefusal(f"Invalid escrow file (missing manifest_hmac_key_b64): {escrow_path}")
+
+    try:
+        key_bytes = base64.b64decode(b64, validate=True)
+    except Exception as e:
+        raise DevVaultRefusal(f"Invalid escrow file (manifest_hmac_key_b64 not base64): {escrow_path}") from e
+
+    # HMAC-SHA256 key should be at least 32 bytes; refuse smaller.
+    if len(key_bytes) < 32:
+        raise DevVaultRefusal(f"Invalid escrow file (key too short): {escrow_path}")
+
+    return key_bytes.hex()
+
+
+@contextmanager
+def _with_manifest_key_env(key_hex: str):
+    old = os.environ.get("DEVVAULT_MANIFEST_HMAC_KEY_HEX")
+    os.environ["DEVVAULT_MANIFEST_HMAC_KEY_HEX"] = key_hex
+    try:
+        yield
+    finally:
+        if old is None:
+            os.environ.pop("DEVVAULT_MANIFEST_HMAC_KEY_HEX", None)
+        else:
+            os.environ["DEVVAULT_MANIFEST_HMAC_KEY_HEX"] = old
 
 def _p(s: str) -> _Path:
     return _Path(s).expanduser()
@@ -307,7 +346,12 @@ def main(argv: list[str] | None = None) -> int:
                 destination_dir=_p(args.destination_dir),
             )
 
-            engine.restore(req)
+            if args.escrow:
+                key_hex = _load_escrow_manifest_key_hex(_p(args.escrow))
+                with _with_manifest_key_env(key_hex):
+                    engine.restore(req)
+            else:
+                engine.restore(req)
 
             payload = {
                 "status": "ok",
@@ -377,7 +421,12 @@ def main(argv: list[str] | None = None) -> int:
             engine = VerifyEngine(fs)
 
             req = VerifyRequest(snapshot_dir=_p(args.snapshot_dir))
-            res = engine.verify(req)
+            if args.escrow:
+                key_hex = _load_escrow_manifest_key_hex(_p(args.escrow))
+                with _with_manifest_key_env(key_hex):
+                    res = engine.verify(req)
+            else:
+                res = engine.verify(req)
 
             payload = {
                 "status": "ok",
@@ -432,3 +481,7 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
