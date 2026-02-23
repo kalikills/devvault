@@ -38,9 +38,13 @@ Map each launch gate to measurable proof before shipping.
 ---
 
 ## Gate 5 — Coverage Assurance
+
+Note (current): Desktop enforcement wired (Option B). Automated evidence tests still required to mark ✅.
+
 | Requirement | Evidence Type | Source | Status |
 |------------|--------------|--------|--------|
 | First-run discovery scan | Automated + manual | (TBD) | 🔲 |
 | Backup blocked until acknowledgement | Automated test | (TBD) | 🔲 |
 | Acknowledgement persistence | Automated test | (TBD) | 🔲 |
 | Bounded deterministic detection | Automated test | (TBD) | 🔲 |
+

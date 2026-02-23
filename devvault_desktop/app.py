@@ -12,6 +12,9 @@ from devvault_desktop.preflight_dialog import PreflightDialog
 from devvault_desktop.restore_preflight import preflight_restore_destination
 from devvault_desktop.snapshot_picker import SnapshotPicker
 from devvault_desktop.vault_gate import require_vault_ready
+from devvault_desktop.coverage_assurance import compute_uncovered_candidates
+from devvault_desktop.coverage_dialog import CoverageDialog
+
 
 from devvault_desktop.runner import (
     DEFAULT_VAULT_WINDOWS,
@@ -361,6 +364,37 @@ class DevVaultApp(tk.Tk):
         if not self._require_healthy_vault():
             return
 
+        # Gate 5 — Coverage Assurance (Option B: must acknowledge)
+        # If likely projects exist outside protected roots, block until operator decides.
+        try:
+            scan_roots: list[Path] = []
+            candidates = [
+                Path("C:/dev"),
+                Path.home() / "dev",
+                Path.home() / "Documents",
+                Path.home() / "Desktop",
+            ]
+            for r in candidates:
+                if r.exists() and r.is_dir():
+                    scan_roots.append(r)
+
+            if scan_roots:
+                cov = compute_uncovered_candidates(scan_roots=scan_roots, depth=4, top=30)
+                if cov.uncovered:
+                    self._set_busy(False, status="Coverage decision required.")
+                    dlg = CoverageDialog(self, uncovered=cov.uncovered)
+                    decision = dlg.show()
+                    if decision is None:
+                        self._set_status("REFUSED: Coverage not acknowledged. Backup blocked.")
+                        self._set_busy(False, status="Vault open and ready....")
+                        return
+        except Exception as e:
+            msg = str(e)
+            self._set_status(f"REFUSED (coverage): {msg}")
+            messagebox.showerror("Coverage Check Failed", msg)
+            self._set_busy(False, status="Vault open and ready....")
+            return
+
         self._set_busy(True, status=f"Preflight scanning: {src_path}")
 
         def run_backup_worker() -> None:
@@ -584,3 +618,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

@@ -62,8 +62,57 @@ def save_config(data: dict) -> None:
     Path(tmp_name).replace(target)
 
 
+
+def get_protected_roots() -> list[str]:
+    cfg = load_config()
+    roots = cfg.get("protected_roots", [])
+    if not isinstance(roots, list):
+        return []
+    # Normalize to strings
+    out: list[str] = []
+    for r in roots:
+        if isinstance(r, str) and r.strip():
+            out.append(r)
+    return out
+
+
+def add_protected_root(path: str) -> None:
+    p = str(Path(path).expanduser())
+    cfg = load_config()
+    roots = cfg.get("protected_roots", [])
+    if not isinstance(roots, list):
+        roots = []
+    if p not in roots:
+        roots.append(p)
+    cfg["protected_roots"] = roots
+    save_config(cfg)
+
+
+def get_ignored_candidates() -> list[str]:
+    cfg = load_config()
+    items = cfg.get("ignored_candidates", [])
+    if not isinstance(items, list):
+        return []
+    out: list[str] = []
+    for x in items:
+        if isinstance(x, str) and x.strip():
+            out.append(x)
+    return out
+
+
+def ignore_candidate(path: str) -> None:
+    p = str(Path(path).expanduser())
+    cfg = load_config()
+    items = cfg.get("ignored_candidates", [])
+    if not isinstance(items, list):
+        items = []
+    if p not in items:
+        items.append(p)
+    cfg["ignored_candidates"] = items
+    save_config(cfg)
 def set_vault_dir(vault_dir: str) -> None:
     cfg = load_config()
     cfg["vault_dir"] = vault_dir
     save_config(cfg)
+
 
