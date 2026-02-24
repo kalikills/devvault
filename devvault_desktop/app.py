@@ -7,53 +7,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
-def _work_area_for_window(hwnd: int) -> tuple[int, int, int, int] | None:
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        user32 = ctypes.windll.user32
-        MONITOR_DEFAULTTONEAREST = 2
-
-        class RECT(ctypes.Structure):
-            _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG), ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
-
-        class MONITORINFO(ctypes.Structure):
-            _fields_ = [
-                ("cbSize", wintypes.DWORD),
-                ("rcMonitor", RECT),
-                ("rcWork", RECT),
-                ("dwFlags", wintypes.DWORD),
-            ]
-
-        MonitorFromWindow = user32.MonitorFromWindow
-        MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
-        MonitorFromWindow.restype = wintypes.HMONITOR
-
-        GetMonitorInfoW = user32.GetMonitorInfoW
-        GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
-        GetMonitorInfoW.restype = wintypes.BOOL
-
-        hmon = MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
-        if not hmon:
-            return None
-
-        mi = MONITORINFO()
-        mi.cbSize = ctypes.sizeof(MONITORINFO)
-        if not GetMonitorInfoW(hmon, ctypes.byref(mi)):
-            return None
-
-        wa = mi.rcWork
-        x = int(wa.left)
-        y = int(wa.top)
-        w = int(wa.right - wa.left)
-        h = int(wa.bottom - wa.top)
-        return (x, y, w, h)
-    except Exception:
-        return None
-
-
 from devvault_desktop.config import set_vault_dir
+from devvault_desktop.winmon import get_work_area_for_window
 from devvault_desktop.preflight_dialog import PreflightDialog
 from devvault_desktop.restore_preflight import preflight_restore_destination
 from devvault_desktop.snapshot_picker import SnapshotPicker
@@ -401,7 +356,7 @@ class DevVaultApp(tk.Tk):
             # Work-area helper may or may not exist; fail-open
             wa = None
             try:
-                wa = _work_area_for_window(int(self.winfo_id()))  # type: ignore[name-defined]
+                wa = get_work_area_for_window(self)
             except Exception:
                 wa = None
 
@@ -793,6 +748,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
 
 
 

@@ -1139,9 +1139,11 @@ Hardens operator-facing desktop layer against tooling-induced corruption by enfo
 
 - Fixed desktop startup crash caused by duplicate/invalid geometry logic (wa.w/wa.x on None/tuple).
 - Consolidated window sizing/centering to a single authority (_apply_root_geometry) using Win32 monitor work-area (taskbar-safe).
+- Standardized monitor work-area logic into devvault_desktop/winmon.py; app.py now calls get_work_area_for_window(self) to avoid duplicated Win32 geometry code.
 - Coverage dialog rewritten to be monitor-aware and stable (withdraw → place → deiconify).
 - Packaging hardened via spec hiddenimports adjustments as needed to include desktop modules.
 
 Architectural impact:
 Prevents false-negative UX (dialogs off-screen/taskbar-covered) and restores fail-closed desktop reliability under real operator conditions.
+
 
