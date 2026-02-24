@@ -18,6 +18,7 @@ from devvault_desktop.coverage_assurance import compute_uncovered_candidates
 from devvault_desktop.coverage_dialog import CoverageDialog
 from devvault_desktop.config import is_coverage_first_run_done, set_coverage_first_run_done
 from devvault_desktop.config import get_last_backup_at_utc, set_last_backup_at_utc
+from devvault_desktop.license_gate import check_license
 
 
 
@@ -739,6 +740,19 @@ class DevVaultApp(tk.Tk):
 
 
 def main() -> int:
+    # License gate (fail-closed). If missing/invalid, show a calm message and exit.
+    st = check_license()
+    if not st.ok:
+        try:
+            # Create a minimal Tk root just for the dialog (do not show a blank window)
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror("DevVault — License Required", st.message)
+            root.destroy()
+        except Exception:
+            # Last-resort fallback if Tk cannot show UI
+            print(st.message, file=sys.stderr)
+        return 2
     app = DevVaultApp()
     app.mainloop()
     return 0

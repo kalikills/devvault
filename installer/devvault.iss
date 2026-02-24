@@ -4,11 +4,13 @@
 #define MyAppExeName "DevVault.exe"
 
 [Setup]
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 AppId={{A9D3C8B7-6D6C-4D44-9D92-1A2B3C4D5E6F}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={autopf}\DevVault
 DisableProgramGroupPage=yes
 OutputDir=output
 OutputBaseFilename=DevVault-Setup
@@ -31,4 +33,5 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
 
