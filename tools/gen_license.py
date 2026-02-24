@@ -11,6 +11,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 LICENSE_FORMAT = "dvlic.v1"
 PRODUCT = "DevVault"
+def _b64_any_decode(s: str) -> bytes:
+    s = s.strip().strip('"').strip("'")
+    pad = "=" * ((4 - (len(s) % 4)) % 4)
+    s2 = s + pad
+    try:
+        return base64.b64decode(s2.encode("ascii"), validate=False)
+    except Exception:
+        return base64.urlsafe_b64decode(s2.encode("ascii"))
+
 
 
 def _b64u_encode(raw: bytes) -> str:
@@ -41,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     if not features:
         raise SystemExit("--features cannot be empty")
 
-    sk_raw = base64.b64decode(args.private_key_b64.encode("ascii"))
+    sk_raw = _b64_any_decode(args.private_key_b64)
     if len(sk_raw) != 32:
         raise SystemExit(f"private key decoded length {len(sk_raw)} != 32 bytes")
     sk = Ed25519PrivateKey.from_private_bytes(sk_raw)
