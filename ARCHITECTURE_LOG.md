@@ -1135,4 +1135,13 @@ Eliminates false-negative drills caused by missing CLI entrypoint; drills now va
 
 Architectural impact:
 Hardens operator-facing desktop layer against tooling-induced corruption by enforcing deterministic, fail-closed edit discipline.
+## 2026-02-23 — Desktop multi-monitor work-area placement stabilized
+
+- Fixed desktop startup crash caused by duplicate/invalid geometry logic (wa.w/wa.x on None/tuple).
+- Consolidated window sizing/centering to a single authority (_apply_root_geometry) using Win32 monitor work-area (taskbar-safe).
+- Coverage dialog rewritten to be monitor-aware and stable (withdraw → place → deiconify).
+- Packaging hardened via spec hiddenimports adjustments as needed to include desktop modules.
+
+Architectural impact:
+Prevents false-negative UX (dialogs off-screen/taskbar-covered) and restores fail-closed desktop reliability under real operator conditions.
 

@@ -29,7 +29,13 @@ def evaluate_first_run_gate(
     if first_run_done:
         return FirstRunGateDecision(allowed=True, uncovered_candidates=())
 
-    cleaned = [c.strip() for c in uncovered_candidates if (c or "").strip()]
+    cleaned = [
+        ("" if c is None else str(c)).strip()
+        for c in uncovered_candidates
+        if ("" if c is None else str(c)).strip()
+    ]
     uncovered_sorted = tuple(sorted(set(cleaned), key=lambda s: s.lower()))
     allowed = len(uncovered_sorted) == 0
     return FirstRunGateDecision(allowed=allowed, uncovered_candidates=uncovered_sorted)
+
+

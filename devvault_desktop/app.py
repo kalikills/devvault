@@ -7,11 +7,58 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
+def _work_area_for_window(hwnd: int) -> tuple[int, int, int, int] | None:
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        MONITOR_DEFAULTTONEAREST = 2
+
+        class RECT(ctypes.Structure):
+            _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG), ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", RECT),
+                ("rcWork", RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        MonitorFromWindow = user32.MonitorFromWindow
+        MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+        MonitorFromWindow.restype = wintypes.HMONITOR
+
+        GetMonitorInfoW = user32.GetMonitorInfoW
+        GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
+        GetMonitorInfoW.restype = wintypes.BOOL
+
+        hmon = MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+        if not hmon:
+            return None
+
+        mi = MONITORINFO()
+        mi.cbSize = ctypes.sizeof(MONITORINFO)
+        if not GetMonitorInfoW(hmon, ctypes.byref(mi)):
+            return None
+
+        wa = mi.rcWork
+        x = int(wa.left)
+        y = int(wa.top)
+        w = int(wa.right - wa.left)
+        h = int(wa.bottom - wa.top)
+        return (x, y, w, h)
+    except Exception:
+        return None
+
+
 from devvault_desktop.config import set_vault_dir
 from devvault_desktop.preflight_dialog import PreflightDialog
 from devvault_desktop.restore_preflight import preflight_restore_destination
 from devvault_desktop.snapshot_picker import SnapshotPicker
 from devvault_desktop.vault_gate import require_vault_ready
+from devvault_desktop.first_run_gate import evaluate_first_run_gate
 from devvault_desktop.coverage_assurance import compute_uncovered_candidates
 from devvault_desktop.coverage_dialog import CoverageDialog
 from devvault_desktop.config import is_coverage_first_run_done, set_coverage_first_run_done
@@ -60,7 +107,10 @@ class DevVaultApp(tk.Tk):
         self.minsize(560, 360)
         self.configure(bg=self.BG)
 
-        # Titlebar icon (source + PyInstaller-safe)
+        # Place the window on the current monitor (work-area safe; avoids taskbar overlap)
+        self.after(0, self._apply_root_geometry)
+
+# Titlebar icon (source + PyInstaller-safe)
         try:
             if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
                 base = Path(sys._MEIPASS)  # PyInstaller extraction dir
@@ -273,6 +323,25 @@ class DevVaultApp(tk.Tk):
                         uncovered_candidates=cov.uncovered,
                     )
                     if not gate.allowed:
+                        first_run_msg = (
+                            "Welcome to DevVault.\n\n"
+                            "First-time setup requires a scan to identify important projects and confirm they are protected.\n\n"
+                            "Without this first scan, DevVault cannot continue.\n\n"
+                            "Do you agree to run the first-time scan now?"
+                        )
+                        ok = messagebox.askyesno(
+                            "First-Time Setup Required",
+                            first_run_msg,
+                            parent=self,
+                        )
+                        if not ok:
+                            messagebox.showinfo(
+                                "DevVault Closed",
+                                "No changes were made. Run DevVault again when you're ready to complete first-time setup.",
+                                parent=self,
+                            )
+                            raise SystemExit(2)
+
                         dlg = CoverageDialog(self, uncovered=list(gate.uncovered_candidates))
                         decision = dlg.show()
                         if decision is None:
@@ -297,7 +366,8 @@ class DevVaultApp(tk.Tk):
             from datetime import datetime, timezone
 
             protected = get_protected_roots()
-            last_s = get_last_backup_at_utc().strip()
+            last_v = get_last_backup_at_utc()
+            last_s = last_v.strip() if isinstance(last_v, str) else ""
             if protected and last_s:
                 try:
                     last = datetime.fromisoformat(last_s)
@@ -320,6 +390,38 @@ class DevVaultApp(tk.Tk):
     # UI helpers
     # ------------------------------------------------------------
 
+    def _apply_root_geometry(self) -> None:
+        """
+        Place the main window centered on the current monitor's work-area (taskbar-safe).
+        Fail-open: never crash the app due to geometry.
+        """
+        try:
+            self.update_idletasks()
+
+            # Work-area helper may or may not exist; fail-open
+            wa = None
+            try:
+                wa = _work_area_for_window(int(self.winfo_id()))  # type: ignore[name-defined]
+            except Exception:
+                wa = None
+
+            if wa is None:
+                wa_x, wa_y = 0, 0
+                wa_w, wa_h = self.winfo_screenwidth(), self.winfo_screenheight()
+            else:
+                wa_x, wa_y, wa_w, wa_h = wa
+
+            # Main UI size: monitor-relative with caps
+            w = min(980, max(760, int(wa_w * 0.70)))
+            h = min(640, max(480, int(wa_h * 0.65)))
+
+            x = wa_x + max(0, (wa_w - w) // 2)
+            y = wa_y + max(0, (wa_h - h) // 2)
+
+            self.geometry(f"{w}x{h}+{x}+{y}")
+            self.minsize(760, 480)
+        except Exception:
+            pass
     def _log(self, msg: str) -> None:
         self.log.configure(state="normal")
         self.log.insert("end", msg.rstrip() + "\n")
@@ -691,6 +793,19 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
