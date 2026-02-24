@@ -1,3 +1,18 @@
+## 2026-02-24 — Next Section: License Distribution & Renewal Pipeline
+
+- Decision: Model 1 (offline) is the v1 licensing distribution method.
+  - Customer receives a signed .dvlic by email after purchase.
+  - App does not require internet connectivity.
+- Risk noted: system clock rollback can extend offline expiry unless mitigated.
+- Next work scope:
+  - Create operator handbook/runbook for key generation + renewal (stupid-proof).
+  - Define renewal flow (annual issuance) and internal process for generating licenses.
+  - Future (optional): online activation + automated issuance via purchase → email.
+
+Architectural impact:
+Moves licensing from “local test” to an operational commercial workflow (issuance, renewal, and support).
+
+---
 ## 2026-02-24 — Desktop Licensing Enforcement Stabilized
 
 - Desktop licensing gate verified end-to-end in installed EXE.
@@ -1158,6 +1173,7 @@ Hardens operator-facing desktop layer against tooling-induced corruption by enfo
 
 Architectural impact:
 Prevents false-negative UX (dialogs off-screen/taskbar-covered) and restores fail-closed desktop reliability under real operator conditions.
+
 
 
 

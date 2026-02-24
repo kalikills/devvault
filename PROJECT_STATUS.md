@@ -42,7 +42,9 @@ DevVault backups are now **cryptographically survivable.**
 
 ---
 
-# 🟡 In Progress (Reliability Hardening)
+# 🟡 In Progress
+
+- [ ] Licensing distribution + renewal workflow (Model 1: email .dvlic) — handbook + process (Reliability Hardening)
 
 These items increase operator trust and disaster confidence.
 
@@ -160,6 +162,7 @@ Architecture risk is low.
 Reliability confidence is rising.  
 
 The remaining work is validation — not invention.
+
 
 
 

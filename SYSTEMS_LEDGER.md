@@ -1,3 +1,21 @@
+## SYSTEM: License Issuance & Renewal
+
+Purpose:
+Enable commercial distribution of DevVault licenses with a repeatable internal process.
+
+v1 (Offline Model 1):
+- Customer receives signed .dvlic via email after purchase.
+- DevVault runs without internet connectivity.
+- Licenses include embedded expiry timestamp.
+
+Known risks (offline):
+- System clock rollback can extend perceived validity unless mitigated.
+
+Planned next steps:
+- Publish internal handbook: key storage, annual renewal workflow, issuance checklist.
+- Optional future: online activation + automated issuance pipeline.
+
+---
 # DEVVAULT — SYSTEMS LEDGER
 
 Purpose:
@@ -162,6 +180,8 @@ Implication:
 Metadata visibility alone is no longer considered evidence of recoverability.
 
 Unreadable sources trigger fail-closed refusal.
+
+
 
 
 
