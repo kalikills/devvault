@@ -109,6 +109,25 @@ Expansion is permitted only when it strengthens protection of irreplaceable data
 ---
 
 ## ENGINEERING OPERATING MODEL
+## SYSTEM: Desktop Licensing Gate (Distribution Control)
+
+Purpose:
+- Prevent unauthorized desktop distribution while preserving trust posture (calm refusal, fail-closed).
+
+Behavior:
+- Desktop checks for a license before UI launch.
+- If missing/invalid: show a clear dialog explaining where to install the license file, then exit.
+
+License format:
+- Signed payload (dvlic.v1) verified with embedded Ed25519 public key.
+
+Search paths:
+- C:\ProgramData\DevVault\license.dvlic
+- %APPDATA%\DevVault\license.dvlic
+
+Operational impact:
+- Install is deterministic: license can be placed centrally (ProgramData) or per-user (AppData).
+- No dev tooling required to validate gate behavior on a clean machine.
 
 ## SYSTEM: Reliability Validation Coverage
 
@@ -143,5 +162,6 @@ Implication:
 Metadata visibility alone is no longer considered evidence of recoverability.
 
 Unreadable sources trigger fail-closed refusal.
+
 
 
