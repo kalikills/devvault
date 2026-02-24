@@ -62,8 +62,10 @@ class DevVaultApp(tk.Tk):
         self.minsize(560, 360)
         self.configure(bg=self.BG)
 
+        # Place window after it's mapped to a real monitor (multi-monitor safe)
+        self.bind("<Map>", self._on_map_apply_geometry)
+
         # Place the window on the current monitor (work-area safe; avoids taskbar overlap)
-        self.after(0, self._apply_root_geometry)
 
 # Titlebar icon (source + PyInstaller-safe)
         try:
@@ -377,6 +379,13 @@ class DevVaultApp(tk.Tk):
             self.minsize(760, 480)
         except Exception:
             pass
+    def _on_map_apply_geometry(self, _event=None) -> None:
+        # Apply geometry only once, when the window is actually mapped to a monitor.
+        try:
+            self.unbind("<Map>")
+        except Exception:
+            pass
+
     def _log(self, msg: str) -> None:
         self.log.configure(state="normal")
         self.log.insert("end", msg.rstrip() + "\n")
@@ -748,6 +757,10 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
 
 
 
