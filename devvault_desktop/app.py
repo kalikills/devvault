@@ -62,7 +62,7 @@ class DevVaultApp(tk.Tk):
         self.minsize(560, 360)
         self.configure(bg=self.BG)
 
-        # Place window after it's mapped to a real monitor (multi-monitor safe)
+        # Apply geometry once the window is mapped to a real monitor (multi-monitor safe)
         self.bind("<Map>", self._on_map_apply_geometry)
 
         # Place the window on the current monitor (work-area safe; avoids taskbar overlap)
@@ -347,45 +347,34 @@ class DevVaultApp(tk.Tk):
     # UI helpers
     # ------------------------------------------------------------
 
+    def _on_map_apply_geometry(self, _event=None) -> None:
+        # Apply geometry exactly once, when the window is mapped to a monitor.
+        try:
+            self.unbind("<Map>")
+        except Exception:
+            pass
+        self.after(0, self._apply_root_geometry)
+
     def _apply_root_geometry(self) -> None:
         """
-        Place the main window centered on the current monitor's work-area (taskbar-safe).
-        Fail-open: never crash the app due to geometry.
+        Place the main window centered on the monitor work-area (taskbar-safe).
+        Fail-open: never crash the app due to placement.
         """
         try:
             self.update_idletasks()
-
-            # Work-area helper may or may not exist; fail-open
-            wa = None
-            try:
-                wa = get_work_area_for_window(self)
-            except Exception:
-                wa = None
-
-            if wa is None:
-                wa_x, wa_y = 0, 0
-                wa_w, wa_h = self.winfo_screenwidth(), self.winfo_screenheight()
-            else:
-                wa_x, wa_y, wa_w, wa_h = wa
+            wa = get_work_area_for_window(self)
 
             # Main UI size: monitor-relative with caps
-            w = min(980, max(760, int(wa_w * 0.70)))
-            h = min(640, max(480, int(wa_h * 0.65)))
+            w = min(980, max(760, int(wa.w * 0.70)))
+            h = min(640, max(480, int(wa.h * 0.65)))
 
-            x = wa_x + max(0, (wa_w - w) // 2)
-            y = wa_y + max(0, (wa_h - h) // 2)
+            x = wa.x + max(0, (wa.w - w) // 2)
+            y = wa.y + max(0, (wa.h - h) // 2)
 
             self.geometry(f"{w}x{h}+{x}+{y}")
             self.minsize(760, 480)
         except Exception:
             pass
-    def _on_map_apply_geometry(self, _event=None) -> None:
-        # Apply geometry only once, when the window is actually mapped to a monitor.
-        try:
-            self.unbind("<Map>")
-        except Exception:
-            pass
-
     def _log(self, msg: str) -> None:
         self.log.configure(state="normal")
         self.log.insert("end", msg.rstrip() + "\n")
@@ -757,26 +746,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

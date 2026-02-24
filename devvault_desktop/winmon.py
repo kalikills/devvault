@@ -98,3 +98,36 @@ def get_work_area_for_window(win) -> WorkArea:
 
     except Exception:
         return _fallback_work_area(win)
+
+def get_primary_work_area() -> WorkArea:
+    """
+    Return primary monitor work area (taskbar excluded).
+    Used for deterministic initial root placement.
+    """
+    if ctypes is None:
+        # fallback: 1920x1080 assumption safe center
+        return WorkArea(0, 0, 1920, 1080)
+
+    try:
+        SPI_GETWORKAREA = 0x0030
+
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG),
+            ]
+
+        rect = RECT()
+        ctypes.windll.user32.SystemParametersInfoW(
+            SPI_GETWORKAREA, 0, ctypes.byref(rect), 0
+        )
+
+        w = int(rect.right - rect.left)
+        h = int(rect.bottom - rect.top)
+
+        return WorkArea(int(rect.left), int(rect.top), w, h)
+
+    except Exception:
+        return WorkArea(0, 0, 1920, 1080)
