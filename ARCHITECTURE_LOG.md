@@ -1,3 +1,29 @@
+## 2026-02-24 — Desktop Licensing Enforcement Stabilized
+
+- Desktop licensing gate verified end-to-end in installed EXE.
+- Missing license → clean refusal dialog + ExitCode 2 (fail-closed).
+- Valid license → normal launch + ExitCode 0.
+- Entry-point hardened via aise SystemExit(main()).
+- gen_license tool hardened to accept missing base64 padding.
+- Installer rebuild validated via SHA256 parity (dist vs Program Files).
+
+Architectural impact:
+Licensing is now cryptographically enforced, automation-safe, and deterministic across installed builds.
+
+---
+## 2026-02-24 — Desktop Licensing Enforcement Stabilized
+
+- Desktop licensing gate verified end-to-end in installed EXE.
+- Missing license → clean refusal dialog + ExitCode 2 (fail-closed).
+- Valid license → normal launch + ExitCode 0.
+- Entry-point hardened via aise SystemExit(main()).
+- gen_license tool hardened to accept missing base64 padding.
+- Installer rebuild validated via SHA256 parity (dist vs Program Files).
+
+Architectural impact:
+Licensing is now cryptographically enforced, automation-safe, and deterministic across installed builds.
+
+---
 # DevVault — BUILD LOG
 
 ## 2026-02-23 — Final Gate Added: Clean Machine Validation (No Dev Tools)
@@ -1145,5 +1171,7 @@ Hardens operator-facing desktop layer against tooling-induced corruption by enfo
 
 Architectural impact:
 Prevents false-negative UX (dialogs off-screen/taskbar-covered) and restores fail-closed desktop reliability under real operator conditions.
+
+
 
 

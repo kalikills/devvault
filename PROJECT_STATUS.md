@@ -19,6 +19,8 @@ Trust is treated as the primary product.
 
 # ✅ Completed (Launch-Critical Capabilities)
 
+  - [x] Desktop licensing gate (fail-closed, exit-code enforced)
+
 - Atomic snapshot pipeline  
 - Manifest integrity verification  
 - Verified restore path  
@@ -158,6 +160,7 @@ Architecture risk is low.
 Reliability confidence is rising.  
 
 The remaining work is validation — not invention.
+
 
 
 
