@@ -25,13 +25,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtWidgets import QGraphicsOpacityEffect
 
 
-ASSET_WATERMARK = (
-    Path(__file__).resolve().parent
-    / "assets"
-    / "brand"
-    / "trustware-shield-watermark.png"
-)
-ASSET_ICON = Path(__file__).resolve().parent / "assets" / "vault.ico"
+ASSET_DIR = Path(__file__).resolve().parent / "assets"
+
+ASSET_WATERMARK = ASSET_DIR / "brand" / "trustware-shield-watermark.png"
+ASSET_BG_LOCKS = ASSET_DIR / "bg_locks_with_text.png"
+ASSET_ICON = ASSET_DIR / "vault.ico"
 
 
 class _BackupPreflightWorker(QObject):
@@ -181,20 +179,25 @@ class DevVaultQt(QMainWindow):
         WM_OPACITY = 0.22  # watermark alpha
 
         # Base styling (black theme)
+        # Base styling (black theme + locks background)
+        bg = str(ASSET_BG_LOCKS).replace('\\\\','/')
         root.setStyleSheet(
-            """
-            QWidget#root { background: #0b0b0b; }
-            QLabel { color: #e6c200; }
-            QPushButton {
+            f"""
+            QWidget#root {{
+              background-color: #0b0b0b;
+            }}
+            QLabel {{ color: #e6c200; }}
+            QPushButton {{
                 color: #e6c200;
                 background: #111114;
                 border: 1px solid #3a3a3a;
                 padding: 10px 16px;
                 min-width: 160px;
-            }
-            QPushButton:hover { border-color: #666; }
-        """
+            }}
+            QPushButton:hover {{ border-color: #666; }}
+            """
         )
+
 
         main = QVBoxLayout(root)
         main.setContentsMargins(40, 30, 40, 30)
@@ -691,6 +694,11 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
+
 
 
 
