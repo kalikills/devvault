@@ -1179,3 +1179,29 @@ Prevents false-negative UX (dialogs off-screen/taskbar-covered) and restores fai
 
 
 
+
+## 2026-03-04 — Qt Backup Engine Stabilized
+
+DevVault Desktop backup workflow finalized and stabilized.
+
+Architecture
+- Preflight worker thread performs vault validation
+- Operator confirmation dialog presents:
+  - Source path
+  - Vault path
+  - File count
+  - Total bytes
+  - Symlinks skipped
+  - Unreadable counts
+  - Vault capacity + free space
+- Execute worker thread performs snapshot creation
+- UI remains responsive through Qt signal/slot model
+- Thread cleanup performed via thread.finished hooks
+
+Operational Flow
+Backup → Preflight → Confirm → Execute → Snapshot
+
+Result
+Backup engine now stable and production-safe.
+No thread deadlocks, UI freezes, or orphaned threads observed during live testing.
+
