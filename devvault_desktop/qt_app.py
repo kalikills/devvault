@@ -400,6 +400,16 @@ class DevVaultQt(QMainWindow):
         self.btn_backup.setEnabled(not busy)
         self.btn_restore.setEnabled(not busy)
 
+    def _cleanup_backup_preflight_thread(self) -> None:
+        # Called only when preflight thread has fully finished.
+        self._backup_pre = None
+        self._backup_thread = None
+
+    def _cleanup_backup_execute_thread(self) -> None:
+        # Called only when execute thread has fully finished.
+        self._backup_exec = None
+        self._backup_exec_thread = None
+
     def make_backup(self) -> None:
         # Choose SOURCE folder to back up (behavior only; no UI layout changes)
         folder = QFileDialog.getExistingDirectory(
@@ -429,12 +439,12 @@ class DevVaultQt(QMainWindow):
         self._backup_pre.log.connect(self.append_log)
 
         # IMPORTANT: connect to real QObject methods (UI thread)
-        self._backup_pre.done.connect(self._on_backup_pre_done)
-        self._backup_pre.error.connect(self._on_backup_pre_err)
+        self._backup_pre.done.connect(self._on_backup_pre_done, type=Qt.QueuedConnection)
+        self._backup_pre.error.connect(self._on_backup_pre_err, type=Qt.QueuedConnection)
 
         self._backup_thread.finished.connect(self._backup_pre.deleteLater)
         self._backup_thread.finished.connect(self._backup_thread.deleteLater)
-
+        self._backup_thread.finished.connect(self._cleanup_backup_preflight_thread, type=Qt.QueuedConnection)
         self._backup_thread.start()
 
     def _on_backup_pre_done(self, pre: dict) -> None:
@@ -471,19 +481,38 @@ class DevVaultQt(QMainWindow):
         if warns:
             warn_lines = "\n".join([f"  - {w}" for w in warns])
 
+        # Vault capacity / free space (best-effort)
+        vault_total = vault_free = None
+        try:
+            import shutil
+            du = shutil.disk_usage(str(getattr(self, "_pending_backup_vault", pre.get("vault") or "")))
+            vault_total = int(du.total)
+            vault_free = int(du.free)
+        except Exception:
+            pass
+
         msg = (
-            "Pre-backup validation complete.\n\n"
-            f"Source:\n  {pre.get('source')}\n\n"
-            f"Vault:\n  {pre.get('vault')}\n\n"
+            "Pre-backup validation complete.\n"
+            f"Source:\n  {pre.get('source')}\n"
+            f"Vault:\n  {pre.get('vault')}\n"
             f"Files: {pre.get('file_count')}  Size: {fmt_bytes(pre.get('total_bytes', 0))}\n"
             f"Symlinks skipped: {pre.get('skipped_symlinks')}\n"
-            f"Unreadable paths: {unread}\n\n"
+            f"Unreadable paths: {unread}\n"
         )
 
+        if vault_total is not None and vault_free is not None:
+            pct = 0
+            try:
+                pct = int(round((vault_free / vault_total) * 100)) if vault_total else 0
+            except Exception:
+                pct = 0
+            msg += f"Vault capacity: {fmt_bytes(vault_total)}  Free: {fmt_bytes(vault_free)}  (~{pct}% free)"
+        msg += "\n"
+
         if warn_lines:
-            msg += "Warnings:\n" + warn_lines + "\n\n"
+            msg += "Warnings:\n" + warn_lines + "\n"
         if sample_lines:
-            msg += "Unreadable samples:\n" + sample_lines + "\n\n"
+            msg += "Unreadable samples:\n" + sample_lines + "\n"
 
         msg += "Proceed with backup?"
 
@@ -503,50 +532,78 @@ class DevVaultQt(QMainWindow):
 
         self.append_log("Confirming backup (operator approval required)...")
 
-        if QMessageBox.warning(self, "Confirm Backup", msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
-            self.append_log("Backup canceled (operator declined preflight confirmation).")
-            self._set_busy(False)
-            return
+        # CRITICAL: schedule dialog on UI thread
+        def _ask_confirm() -> None:
+            if QMessageBox.warning(
+                self,
+                "Confirm Backup",
+                msg,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            ) != QMessageBox.Yes:
+                self.append_log("Backup canceled (operator declined preflight confirmation).")
+                self._set_busy(False)
+                return
 
-        # ---------- Phase 2: Execute ----------
-        source_dir = getattr(self, "_pending_backup_source", None)
-        vault_dir = getattr(self, "_pending_backup_vault", None)
-        if source_dir is None or vault_dir is None:
-            self.append_log("Backup refused: internal error (missing pending paths).")
-            self._set_busy(False)
-            return
+            # ---------- Phase 2: Execute ----------
+            source_dir = getattr(self, "_pending_backup_source", None)
+            vault_dir = getattr(self, "_pending_backup_vault", None)
+            if source_dir is None or vault_dir is None:
+                self.append_log("Backup refused: internal error (missing pending paths).")
+                self._set_busy(False)
+                return
 
-        self._backup_exec_thread = QThread()
-        self._backup_exec = _BackupExecuteWorker(source_dir, vault_dir)
-        self._backup_exec.moveToThread(self._backup_exec_thread)
+            self._backup_exec_thread = QThread()
+            self._backup_exec = _BackupExecuteWorker(source_dir, vault_dir)
+            self._backup_exec.moveToThread(self._backup_exec_thread)
 
-        self._backup_exec_thread.started.connect(self._backup_exec.run)
-        self._backup_exec.log.connect(self.append_log)
+            self._backup_exec_thread.started.connect(self._backup_exec.run)
+            self._backup_exec.log.connect(self.append_log)
 
-        def _done(payload: dict) -> None:
-            self.append_log("Backup complete.")
-            self.append_log(f"Result: {payload}")
-            self._set_busy(False)
-            self._backup_exec_thread.quit()
+            def _done(payload: dict) -> None:
+                self.append_log("Backup complete.")
+                self.append_log(f"Result: {payload}")
+                self._set_busy(False)
+                try:
+                    self._backup_exec_thread.quit()
+                    try:
+                        pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
-        def _err(msg2: str) -> None:
-            self.append_log(f"Backup refused: {msg2}")
-            self._set_busy(False)
-            self._backup_exec_thread.quit()
+            def _err(msg2: str) -> None:
+                self.append_log(f"Backup refused: {msg2}")
+                self._set_busy(False)
+                try:
+                    self._backup_exec_thread.quit()
+                    try:
+                        pass
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
-        self._backup_exec.done.connect(_done)
-        self._backup_exec.error.connect(_err)
+            self._backup_exec.done.connect(_done, type=Qt.QueuedConnection)
+            self._backup_exec.error.connect(_err, type=Qt.QueuedConnection)
 
-        self._backup_exec_thread.finished.connect(self._backup_exec.deleteLater)
-        self._backup_exec_thread.finished.connect(self._backup_exec_thread.deleteLater)
+            self._backup_exec_thread.finished.connect(self._backup_exec.deleteLater)
+            self._backup_exec_thread.finished.connect(self._backup_exec_thread.deleteLater)
+            self._backup_exec_thread.finished.connect(self._cleanup_backup_execute_thread, type=Qt.QueuedConnection)
+            self._backup_exec_thread.start()
 
-        self._backup_exec_thread.start()
+        QTimer.singleShot(0, _ask_confirm)
 
     def _on_backup_pre_err(self, msg: str) -> None:
         self.append_log(f"Backup refused: {msg}")
         self._set_busy(False)
         try:
             self._backup_thread.quit()
+            try:
+                pass
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -620,10 +677,10 @@ class DevVaultQt(QMainWindow):
 
         if is_onedrive:
             warn = (
-                "Warning: Destination appears to be inside a OneDrive-synced folder.\n\n"
+                "Warning: Destination appears to be inside a OneDrive-synced folder.\n"
                 "Cloud sync can lock files or modify timestamps during restore.\n"
-                "For maximum reliability, restore to a local non-synced folder.\n\n"
-                f"Destination:\n  {destination_dir}\n\n"
+                "For maximum reliability, restore to a local non-synced folder.\n"
+                f"Destination:\n  {destination_dir}\n"
                 "Continue anyway?"
             )
             if QMessageBox.warning(self, "OneDrive Destination Warning", warn, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
@@ -632,9 +689,9 @@ class DevVaultQt(QMainWindow):
 
         # 4) Confirm restore (explicit, irreversible warning)
         msg = (
-            "Restore will COPY snapshot contents into the destination folder.\n\n"
-            f"Snapshot:\n  {snapshot_dir}\n\n"
-            f"Destination (must be empty):\n  {destination_dir}\n\n"
+            "Restore will COPY snapshot contents into the destination folder.\n"
+            f"Snapshot:\n  {snapshot_dir}\n"
+            f"Destination (must be empty):\n  {destination_dir}\n"
             "Continue?"
         )
         if QMessageBox.warning(self, "Confirm Restore", msg, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
@@ -694,6 +751,11 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
+
 
 
 
