@@ -4,6 +4,7 @@ from scanner.errors import SnapshotCorrupt, RestoreRefused
 
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from scanner.checksum import hash_path
@@ -22,6 +23,66 @@ class RestoreRequest:
 class RestoreEngine:
     def __init__(self, fs: FileSystemPort):
         self.fs = fs
+
+    def _vault_root_for_snapshot(self, snapshot_dir: Path) -> Path:
+        parent = snapshot_dir.parent
+        if parent.name == "snapshots" and parent.parent.name == ".devvault":
+            return parent.parent.parent
+        return parent
+
+    def _validate_snapshot_identity(self, *, snapshot_dir: Path, manifest: dict) -> None:
+        backup_id = manifest.get("backup_id")
+        if backup_id is None:
+            return
+        if not isinstance(backup_id, str) or not backup_id.strip():
+            raise SnapshotCorrupt("Invalid manifest: backup_id must be a non-empty string.")
+
+        display_name = manifest.get("display_name")
+        if display_name is not None and not isinstance(display_name, str):
+            raise SnapshotCorrupt("Invalid manifest: display_name must be a string.")
+
+        expected_dir_name = backup_id.strip()
+        if isinstance(display_name, str) and display_name.strip():
+            expected_dir_name = f"{backup_id.strip()} - {display_name.strip()}"
+
+        if snapshot_dir.name != expected_dir_name:
+            raise SnapshotCorrupt(
+                "Snapshot identity mismatch: folder name does not match manifest metadata."
+            )
+
+    def _build_restore_manifest_text(
+        self,
+        *,
+        snapshot_id: str,
+        restored_at: str,
+        mappings: list[tuple[Path, Path]],
+    ) -> str:
+        lines = [
+            "DevVault Restore Manifest",
+            f"Snapshot ID: {snapshot_id}",
+            f"Restore Timestamp: {restored_at}",
+            "",
+            "Mapping:",
+        ]
+        for original_rel, restored_rel in mappings:
+            lines.append(f"{original_rel.as_posix()} -> {restored_rel.as_posix()}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _write_restore_manifest(
+        self,
+        *,
+        destination_dir: Path,
+        snapshot_id: str,
+        mappings: list[tuple[Path, Path]],
+    ) -> None:
+        manifest_path = destination_dir / "_restore_manifest.txt"
+        manifest_text = self._build_restore_manifest_text(
+            snapshot_id=snapshot_id,
+            restored_at=datetime.now(timezone.utc).isoformat(),
+            mappings=mappings,
+        )
+        self.fs.write_text(manifest_path, manifest_text, encoding="utf-8")
 
     def restore(self, req: RestoreRequest) -> None:
         # --- Validate snapshot ---
@@ -54,14 +115,16 @@ class RestoreEngine:
                 f"Snapshot manifest is invalid JSON; refusing restore. Path: {manifest_path}"
             ) from None
 
-        hmac_key = load_manifest_hmac_key(vault_root=req.snapshot_dir.parent)
+        hmac_key = load_manifest_hmac_key(
+            vault_root=self._vault_root_for_snapshot(req.snapshot_dir)
+        )
 
         ok, _reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
         if not ok:
             raise SnapshotCorrupt("Invalid manifest: integrity check failed.")
 
-
         validate_crypto_stanza(manifest)
+        self._validate_snapshot_identity(snapshot_dir=req.snapshot_dir, manifest=manifest)
 
         files = manifest.get("files")
         if not isinstance(files, list):
@@ -127,6 +190,8 @@ class RestoreEngine:
             restore_root = stage_dir
             staged = True
 
+        restored_mappings: list[tuple[Path, Path]] = []
+
         for src, rel_path, _size, digest_hex in to_copy:
             dst = restore_root / rel_path
 
@@ -136,6 +201,7 @@ class RestoreEngine:
 
             if not is_v2:
                 self.fs.copy_file(src, dst)
+                restored_mappings.append((rel_path, rel_path))
                 continue
 
             tmp = Path(str(dst) + ".devvault.tmp")
@@ -146,6 +212,7 @@ class RestoreEngine:
                 if d.hex != digest_hex:
                     raise SnapshotCorrupt("Restore verification failed: checksum mismatch.")
                 self.fs.rename(tmp, dst)
+                restored_mappings.append((rel_path, rel_path))
             except Exception:
                 if self.fs.exists(tmp):
                     try:
@@ -158,4 +225,8 @@ class RestoreEngine:
         if staged:
             self.fs.rename(stage_dir, req.destination_dir)
 
-
+        self._write_restore_manifest(
+            destination_dir=req.destination_dir,
+            snapshot_id=req.snapshot_dir.name,
+            mappings=restored_mappings,
+        )

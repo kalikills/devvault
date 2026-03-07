@@ -5,6 +5,13 @@ from pathlib import Path
 
 from scanner.ports.filesystem import FileSystemPort
 
+INTERNAL_DIR_NAME = ".devvault"
+SNAPSHOT_DIR_NAME = "snapshots"
+
+
+def snapshot_storage_root(backup_root: Path) -> Path:
+    return backup_root / INTERNAL_DIR_NAME / SNAPSHOT_DIR_NAME
+
 
 @dataclass(frozen=True)
 class SnapshotRef:
@@ -23,12 +30,14 @@ def list_snapshots(*, fs: FileSystemPort, backup_root: Path) -> list[SnapshotRef
       - it contains manifest.json
     """
 
-    if not fs.exists(backup_root) or not fs.is_dir(backup_root):
+    root = snapshot_storage_root(backup_root)
+
+    if not fs.exists(root) or not fs.is_dir(root):
         return []
 
     out: list[SnapshotRef] = []
 
-    for entry in fs.iterdir(backup_root):
+    for entry in fs.iterdir(root):
         name = entry.name
 
         if not fs.is_dir(entry):

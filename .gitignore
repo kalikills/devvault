@@ -1,75 +1,81 @@
+# Python caches / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Virtual environments
 .venv/
 venv/
+env/
+ENV/
 
-# Python cache
-__pycache__/
-*.py[cod]
-
-# Build artifacts
-*.egg-info/
-dist/
+# Build / packaging
 build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
 
-# Tool output / generated files
-report.json
-report.txt
+# Test / coverage / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# OS junk
+# OS / editor junk
 .DS_Store
 Thumbs.db
-
-# Editor folders
+desktop.ini
 .vscode/
 .idea/
-.envrc
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
+
+# PyInstaller / installer artifacts
+*.spec.bak
+out/
+release/
+installer_build/
+installer_dist/
+
+# Local runtime artifacts
+*.pyc
+*.pyo
+*.pyd
+
+# DevVault-specific temporary folders
+dv_smoke/
+dv_failure_lab/
+dv_failure_restore/
+external_restore_test/
+locktest/
+backup_test_project/
+devvault_restore/
+devvault_review/
+devvault_salvage_*/
+devvault-WORKTREE-BACKUP-*/
+
+# DevVault local/dev noise
 .venv-win/
-
-# Generated chat context
-CHAT_CONTEXT_LIGHT.md
-CHAT_CONTEXT_FULL.md
-CHAT_CONTEXT.md
-
-# Script runtime artifactsscripts/*.log
-
-# DevVault chat bootstrap logs
-scripts/*.log
-
-
-# local operator helpers
-Dump-DevVaultContext.ps1
-
-
-# local operator helpers
-Dump-DevVaultContext.ps1
-
-
-# PyInstaller
-build/
-dist/
-*.spec
-
-# Debug spec exception
-!DevVault.spec
-
-# Inno Setup output
-installer/output/
-*.bak*
-
-# DevVault local drill artifacts (do not commit)
-.drill_source/
-.drill_work/
-
-
-# Local CI reproduction environments
-.pkgvenv/
 .wslvenv/
-.wslpkgvenv/
-# DevVault drills (artifacts only; harness is tracked)
+.pkgvenv/
+_bak/
+*.bak
+*.bak-*
+_license_test/
+lab/.drill_work/
 drills/_runs/
-drills/20??-??-??/
-# DevVault drills — keep harness tracked
-!drills/restore/
-!drills/restore/**
-!drills/restore/README.md
-!drills/restore/run_restore_drills.ps1
+
+# DevVault local/build artifacts
+installer/output/
+DevVault-Debug.spec
+.archiveignore
+.envrc
+
+# DevVault lab workspace
+lab/

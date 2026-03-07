@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ from scanner.integrity_keys import load_manifest_hmac_key
 from scanner.vault_key_windows import init_manifest_hmac_key_if_missing
 from scanner.ports.filesystem import FileSystemPort
 from scanner.models.backup import BackupRequest, PreflightReport
+from scanner.snapshot_index import rebuild_snapshot_index, write_snapshot_index
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,29 @@ class BackupResult:
 class BackupEngine:
     def __init__(self, fs: FileSystemPort):
         self._fs = fs
+
+    def _snapshot_storage_root(self, backup_root: Path) -> Path:
+        return backup_root / ".devvault" / "snapshots"
+
+    def _finalize_snapshot_readonly(self, snapshot_root: Path) -> None:
+        setter = getattr(self._fs, "set_tree_readonly", None)
+        if not callable(setter):
+            raise RuntimeError("Filesystem adapter does not support snapshot read-only hardening.")
+        setter(snapshot_root, readonly=True)
+
+    def _source_name_for_request(self, request: BackupRequest) -> str:
+        raw = (request.label or "").strip()
+        if not raw:
+            raw = request.source_root.expanduser().resolve().name.strip()
+        if not raw:
+            raw = "Backup"
+
+        raw = re.sub(r'[<>:"/\\|?*]', "_", raw)
+        raw = raw.rstrip(" .")
+        return raw or "Backup"
+
+    def _display_backup_name(self, source_name: str) -> str:
+        return f"{source_name} - backup"
 
     def preflight(self, request: BackupRequest) -> PreflightReport:
         """
@@ -152,8 +177,13 @@ class BackupEngine:
         suffix = uuid4().hex[:8]
         backup_id = f"{ts}-{suffix}"
 
-        backup_path = request.backup_root / backup_id
-        incomplete_path = request.backup_root / f".incomplete-{backup_id}"
+        source_name = self._source_name_for_request(request)
+        display_name = self._display_backup_name(source_name)
+        backup_dir_name = f"{backup_id} - {display_name}"
+
+        storage_root = self._snapshot_storage_root(request.backup_root)
+        backup_path = storage_root / backup_dir_name
+        incomplete_path = storage_root / f".incomplete-{backup_id}"
 
         return BackupPlan(
             backup_id=backup_id,
@@ -161,7 +191,7 @@ class BackupEngine:
             incomplete_path=incomplete_path,
         )
 
-    def execute(self, request) -> BackupResult:
+    def execute(self, request, cancel_check=None) -> BackupResult:
         started_at = datetime.now(timezone.utc)
         plan = self.plan(request)
 
@@ -195,18 +225,32 @@ class BackupEngine:
         self._copy_tree(
             src_root=request.source_root,
             dst_root=plan.incomplete_path,
+            cancel_check=cancel_check,
         )
 
         # Phase 2.5 — write manifest (v2)
+        source_name = self._source_name_for_request(request)
         self._write_manifest(
             src_root=request.source_root,
             dst_root=plan.incomplete_path,
+            backup_id=plan.backup_id,
+            source_name=source_name,
+            display_name=self._display_backup_name(source_name),
+            backup_root=request.backup_root,
         )
 
         # Phase 3 — atomic finalize
         self._fs.rename(plan.incomplete_path, plan.backup_path)
+        self._finalize_snapshot_readonly(plan.backup_path)
         # Windows: ensure vault-managed manifest HMAC key exists for escrow export
         init_manifest_hmac_key_if_missing(backup_root)
+
+        # Phase 3.5 — refresh snapshot index so Restore sees new backups immediately
+        try:
+            idx = rebuild_snapshot_index(fs=self._fs, backup_root=backup_root)
+            write_snapshot_index(fs=self._fs, index=idx)
+        except Exception:
+            pass
 
         finished_at = datetime.now(timezone.utc)
 
@@ -222,11 +266,16 @@ class BackupEngine:
     # Copy Engine
     # --------------------------------------------------------
 
-    def _copy_tree(self, *, src_root: Path, dst_root: Path) -> None:
+    def _copy_tree(self, *, src_root: Path, dst_root: Path, cancel_check=None) -> None:
         for child in self._fs.iterdir(src_root):
-            self._copy_node(src=child, dst=dst_root / child.name)
+            if cancel_check is not None and bool(cancel_check()):
+                raise RuntimeError("Cancelled by operator.")
+            self._copy_node(src=child, dst=dst_root / child.name, cancel_check=cancel_check)
 
-    def _copy_node(self, *, src: Path, dst: Path) -> None:
+    def _copy_node(self, *, src: Path, dst: Path, cancel_check=None) -> None:
+        if cancel_check is not None and bool(cancel_check()):
+            raise RuntimeError("Cancelled by operator.")
+
         # Skip symlinks (policy)
         if self._fs.is_symlink(src):
             return
@@ -234,12 +283,16 @@ class BackupEngine:
         if self._fs.is_dir(src):
             self._fs.mkdir(dst, parents=True, exist_ok=True)
             for child in self._fs.iterdir(src):
-                self._copy_node(src=child, dst=dst / child.name)
+                if cancel_check is not None and bool(cancel_check()):
+                    raise RuntimeError("Cancelled by operator.")
+                self._copy_node(src=child, dst=dst / child.name, cancel_check=cancel_check)
             return
 
         if self._fs.is_file(src):
             self._fs.mkdir(dst.parent, parents=True, exist_ok=True)
-            self._fs.copy_file(src, dst)
+            if cancel_check is not None and bool(cancel_check()):
+                raise RuntimeError("Cancelled by operator.")
+            self._fs.copy_file(src, dst, cancel_check=cancel_check)
             return
 
         # Skip special filesystem nodes silently for now
@@ -248,7 +301,16 @@ class BackupEngine:
     # Manifest (v2)
     # --------------------------------------------------------
 
-    def _write_manifest(self, *, src_root: Path, dst_root: Path, backup_root: Path | None = None) -> None:
+    def _write_manifest(
+        self,
+        *,
+        src_root: Path,
+        dst_root: Path,
+        backup_id: str,
+        source_name: str,
+        display_name: str,
+        backup_root: Path | None = None,
+    ) -> None:
         if backup_root is None:
             backup_root = dst_root.parent
         files: list[dict[str, object]] = []
@@ -271,11 +333,14 @@ class BackupEngine:
 
         manifest = {
             "manifest_version": 2,
+            "backup_id": backup_id,
+            "source_name": source_name,
+            "display_name": display_name,
             "checksum_algo": algo,
             "files": files,
         }
 
-        hmac_key = load_manifest_hmac_key(vault_root=dst_root.parent, allow_init=False)
+        hmac_key = load_manifest_hmac_key(vault_root=backup_root, allow_init=False)
         manifest = add_integrity_block(manifest, hmac_key=hmac_key)
 
         manifest_path = dst_root / "manifest.json"

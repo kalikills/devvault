@@ -18,6 +18,9 @@ class SnapshotMetadata:
     checksum_algo: str | None
     file_count: int
     total_bytes: int
+    backup_id: str | None
+    source_name: str | None
+    display_name: str | None
 
 
 def _parse_created_at_from_snapshot_id(snapshot_id: str) -> datetime | None:
@@ -81,6 +84,18 @@ def read_snapshot_metadata(*, fs: FileSystemPort, snapshot_dir: Path) -> Snapsho
             raise SnapshotCorrupt("Invalid manifest: checksum_algo must be a string")
         checksum_algo = ca
 
+    backup_id = manifest.get("backup_id")
+    if backup_id is not None and not isinstance(backup_id, str):
+        raise SnapshotCorrupt("Invalid manifest: backup_id must be a string")
+
+    source_name = manifest.get("source_name")
+    if source_name is not None and not isinstance(source_name, str):
+        raise SnapshotCorrupt("Invalid manifest: source_name must be a string")
+
+    display_name = manifest.get("display_name")
+    if display_name is not None and not isinstance(display_name, str):
+        raise SnapshotCorrupt("Invalid manifest: display_name must be a string")
+
     return SnapshotMetadata(
         snapshot_id=snapshot_id,
         created_at=created_at,
@@ -88,4 +103,7 @@ def read_snapshot_metadata(*, fs: FileSystemPort, snapshot_dir: Path) -> Snapsho
         checksum_algo=checksum_algo,
         file_count=count,
         total_bytes=total,
+        backup_id=backup_id,
+        source_name=source_name,
+        display_name=display_name,
     )
