@@ -50,6 +50,9 @@ def rebuild_snapshot_index(*, fs: FileSystemPort, backup_root: Path) -> Snapshot
                 "checksum_algo": md.checksum_algo,
                 "file_count": md.file_count,
                 "total_bytes": md.total_bytes,
+                "seat_id": (getattr(md, "business_identity", {}) or {}).get("seat_id"),
+                "device_id": (getattr(md, "business_identity", {}) or {}).get("device_id"),
+                "hostname": (getattr(md, "business_identity", {}) or {}).get("hostname"),
             }
         )
 
@@ -86,6 +89,18 @@ def write_snapshot_index(*, fs: FileSystemPort, index: SnapshotIndex) -> Path:
     fs.write_text(tmp_path, json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     fs.rename(tmp_path, final_path)
     return final_path
+
+
+def repair_snapshot_index(*, fs: FileSystemPort, backup_root: Path) -> SnapshotIndex:
+    """Explicitly rebuild and persist the snapshot index.
+
+    Use this for operator-initiated or system-initiated repair flows where
+    on-disk repair is the intended side effect.
+    """
+
+    idx = rebuild_snapshot_index(fs=fs, backup_root=backup_root)
+    write_snapshot_index(fs=fs, index=idx)
+    return idx
 
 
 def load_snapshot_index(*, fs: FileSystemPort, backup_root: Path) -> SnapshotIndex | None:

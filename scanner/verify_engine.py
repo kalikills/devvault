@@ -76,8 +76,10 @@ class VerifyEngine:
         hmac_key = load_manifest_hmac_key(
             vault_root=self._vault_root_for_snapshot(req.snapshot_dir)
         )
-        ok, _reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
+        ok, reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
         if not ok:
+            if reason == "missing-hmac-key":
+                raise SnapshotCorrupt("Business vault manifest HMAC key is missing; refusing verify.")
             raise SnapshotCorrupt("Invalid manifest: integrity check failed.")
 
         validate_crypto_stanza(manifest)

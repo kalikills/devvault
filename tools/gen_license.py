@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import uuid
 import sys
 from datetime import datetime, timezone
 
@@ -62,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "format": LICENSE_FORMAT,
         "product": PRODUCT,
+        "license_id": str(uuid.uuid4()),
         "licensee": args.licensee.strip(),
         "issued_at": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "expires_at": exp.replace(microsecond=0).isoformat().replace("+00:00", "Z"),

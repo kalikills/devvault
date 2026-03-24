@@ -19,8 +19,10 @@ class SnapshotMetadata:
     file_count: int
     total_bytes: int
     backup_id: str | None
+    source_root: str | None
     source_name: str | None
     display_name: str | None
+    business_identity: dict[str, str] | None
 
 
 def _parse_created_at_from_snapshot_id(snapshot_id: str) -> datetime | None:
@@ -88,6 +90,10 @@ def read_snapshot_metadata(*, fs: FileSystemPort, snapshot_dir: Path) -> Snapsho
     if backup_id is not None and not isinstance(backup_id, str):
         raise SnapshotCorrupt("Invalid manifest: backup_id must be a string")
 
+    source_root = manifest.get("source_root")
+    if source_root is not None and not isinstance(source_root, str):
+        raise SnapshotCorrupt("Invalid manifest: source_root must be a string")
+
     source_name = manifest.get("source_name")
     if source_name is not None and not isinstance(source_name, str):
         raise SnapshotCorrupt("Invalid manifest: source_name must be a string")
@@ -95,6 +101,20 @@ def read_snapshot_metadata(*, fs: FileSystemPort, snapshot_dir: Path) -> Snapsho
     display_name = manifest.get("display_name")
     if display_name is not None and not isinstance(display_name, str):
         raise SnapshotCorrupt("Invalid manifest: display_name must be a string")
+
+    business_identity_raw = manifest.get("business_identity")
+    business_identity: dict[str, str] | None = None
+    if business_identity_raw is not None:
+        if not isinstance(business_identity_raw, dict):
+            raise SnapshotCorrupt("Invalid manifest: business_identity must be an object")
+        business_identity = {
+            "seat_id": str(business_identity_raw.get("seat_id") or "").strip(),
+            "fleet_id": str(business_identity_raw.get("fleet_id") or "").strip(),
+            "subscription_id": str(business_identity_raw.get("subscription_id") or "").strip(),
+            "device_id": str(business_identity_raw.get("device_id") or "").strip(),
+            "hostname": str(business_identity_raw.get("hostname") or "").strip(),
+            "seat_label": str(business_identity_raw.get("seat_label") or "").strip(),
+        }
 
     return SnapshotMetadata(
         snapshot_id=snapshot_id,
@@ -104,6 +124,8 @@ def read_snapshot_metadata(*, fs: FileSystemPort, snapshot_dir: Path) -> Snapsho
         file_count=count,
         total_bytes=total,
         backup_id=backup_id,
+        source_root=source_root,
         source_name=source_name,
         display_name=display_name,
+        business_identity=business_identity,
     )

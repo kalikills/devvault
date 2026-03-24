@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['devvault_desktop\\app.py'],
+    ['devvault_desktop\\__main__.py'],
     pathex=[],
     binaries=[],
-    datas=[('devvault_desktop\\assets\\vault.ico', 'devvault_desktop\\assets')],
-    hiddenimports=['devvault_desktop.coverage_dialog'],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -32,7 +32,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['devvault_desktop\\assets\\vault.ico'],
 )
 coll = COLLECT(
     exe,

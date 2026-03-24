@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+from cryptography.hazmat.primitives import serialization
 import json
 import os
 from dataclasses import dataclass
@@ -31,14 +33,19 @@ LICENSE_FORMAT = "dvlic.v1"
 DVLIC_V2_EXTENSION = ".dvlic"
 DVLIC_V2_SCHEMA = 2
 DVLIC_V2_PRODUCT = "devvault"
+EXPECTED_PUBKEY_SHA256 = "3fa4dc2a3e166f04963059ab4dbaab019faa98f8c27ab02362707c1e37ccb36b"
 DVLIC_V2_TOP_LEVEL_KEYS = frozenset({"payload", "signature"})
 
 
 @dataclass(frozen=True)
 class LicenseClaims:
+    license_id: str | None
+    plan: str | None
+    seats: int | None
     licensee: str
     issued_at: datetime
     expires_at: datetime
+    entitlements: list[str]
     features: list[str]
     machine_id: str | None
 
@@ -110,6 +117,7 @@ def parse_dvlic_v2_signature(signature_text: str) -> bytes:
 
 def verify_dvlic_v2_signature(env: DVLicV2Envelope) -> None:
     pub = load_public_key()
+    _assert_public_key_fingerprint(pub)
 
     try:
         pub.verify(env.signature_bytes, env.payload_bytes)
@@ -132,6 +140,16 @@ def _parse_iso8601_dt(s: str) -> datetime:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
 
+
+
+def _assert_public_key_fingerprint(pub) -> None:
+    raw = pub.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    actual = hashlib.sha256(raw).hexdigest()
+    if actual != EXPECTED_PUBKEY_SHA256:
+        raise LicenseError("License trust root mismatch.")
 
 def load_public_key() -> Ed25519PublicKey:
     raw = base64.b64decode(PUBLIC_KEY_B64.encode("ascii"))
@@ -324,9 +342,13 @@ def verify_license_string(
             raise LicenseError("License is expired.")
 
         return LicenseClaims(
+            license_id=claims_v2.license_id,
+            plan=claims_v2.plan,
+            seats=claims_v2.seats,
             licensee=claims_v2.licensee,
             issued_at=claims_v2.issued_at,
             expires_at=claims_v2.expires_at,
+            entitlements=list(claims_v2.entitlements),
             features=[claims_v2.plan, f"seats:{claims_v2.seats}"],
             machine_id=None,
         )
@@ -343,6 +365,8 @@ def verify_license_string(
         raise LicenseError("License format is unsupported.")
     if payload.get("product") != PRODUCT:
         raise LicenseError("License is not for this product.")
+
+    license_id = str(payload.get("license_id", "")).strip() or None
 
     licensee = str(payload.get("licensee", "")).strip()
     if not licensee:
@@ -374,9 +398,13 @@ def verify_license_string(
         raise LicenseError("License is not valid for this machine.")
 
     return LicenseClaims(
+        license_id=license_id,
+        plan=None,
+        seats=None,
         licensee=licensee,
         issued_at=issued_at,
         expires_at=expires_at,
+        entitlements=[],
         features=list(features),
         machine_id=machine_id,
     )

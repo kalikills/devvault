@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import json
 import re
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from scanner.checksum import hash_path
+from scanner.errors import SnapshotCorrupt
 from scanner.manifest_integrity import add_integrity_block
 from scanner.integrity_keys import load_manifest_hmac_key
-from scanner.vault_key_windows import init_manifest_hmac_key_if_missing
 from scanner.ports.filesystem import FileSystemPort
 from scanner.models.backup import BackupRequest, PreflightReport
 from scanner.snapshot_index import rebuild_snapshot_index, write_snapshot_index
@@ -33,6 +34,29 @@ class BackupResult:
 
 
 class BackupEngine:
+
+    def _safe_snapshot_name(self, raw: str) -> str:
+        raw = str(raw or "").strip()
+
+        # remove illegal characters
+        raw = re.sub(r'[<>:"/\\|?*]+', "_", raw)
+
+        # collapse whitespace
+        raw = re.sub(r"\s+", " ", raw).strip()
+
+        if not raw:
+            return "Backup"
+
+        MAX_LEN = 48
+
+        if len(raw) <= MAX_LEN:
+            return raw
+
+        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:6]
+        trimmed = raw[:MAX_LEN - 7].rstrip()
+
+        return f"{trimmed}_{digest}"
+
     def __init__(self, fs: FileSystemPort):
         self._fs = fs
 
@@ -131,13 +155,12 @@ class BackupEngine:
                         file_count += 1
                         total_bytes += int(getattr(st, "st_size", 0) or 0)
 
-                        # Minimal read probe: detect share-locked/in-use files early (Windows).
-                        # This is best-effort: backup may still refuse later due to races.
-                        try:
-                            with self._fs.open_read(node) as fh:
-                                _ = fh.read(1)
-                        except Exception as e:
-                            record_unreadable(node, e)
+                        # Preflight is metadata-only on purpose.
+                        # Do NOT open/read file contents here.
+                        # Some cloud-synced or placeholder-backed files can stall badly
+                        # during content probes even when stat() succeeds.
+                        # Execute remains authoritative and may still refuse later if a file
+                        # becomes unreadable during the actual backup.
                     except Exception as e:
                         record_unreadable(node, e)
                     return
@@ -178,7 +201,8 @@ class BackupEngine:
         backup_id = f"{ts}-{suffix}"
 
         source_name = self._source_name_for_request(request)
-        display_name = self._display_backup_name(source_name)
+        safe_name = self._safe_snapshot_name(source_name)
+        display_name = self._display_backup_name(safe_name)
         backup_dir_name = f"{backup_id} - {display_name}"
 
         storage_root = self._snapshot_storage_root(request.backup_root)
@@ -230,6 +254,8 @@ class BackupEngine:
 
         # Phase 2.5 — write manifest (v2)
         source_name = self._source_name_for_request(request)
+        
+
         self._write_manifest(
             src_root=request.source_root,
             dst_root=plan.incomplete_path,
@@ -242,8 +268,7 @@ class BackupEngine:
         # Phase 3 — atomic finalize
         self._fs.rename(plan.incomplete_path, plan.backup_path)
         self._finalize_snapshot_readonly(plan.backup_path)
-        # Windows: ensure vault-managed manifest HMAC key exists for escrow export
-        init_manifest_hmac_key_if_missing(backup_root)
+        # Shared vault key lifecycle is bootstrap-authority driven (Section 4).
 
         # Phase 3.5 — refresh snapshot index so Restore sees new backups immediately
         try:
@@ -267,6 +292,12 @@ class BackupEngine:
     # --------------------------------------------------------
 
     def _copy_tree(self, *, src_root: Path, dst_root: Path, cancel_check=None) -> None:
+        if self._fs.is_file(src_root):
+            if cancel_check is not None and bool(cancel_check()):
+                raise RuntimeError("Cancelled by operator.")
+            self._copy_node(src=src_root, dst=dst_root / src_root.name, cancel_check=cancel_check)
+            return
+
         for child in self._fs.iterdir(src_root):
             if cancel_check is not None and bool(cancel_check()):
                 raise RuntimeError("Cancelled by operator.")
@@ -301,6 +332,8 @@ class BackupEngine:
     # Manifest (v2)
     # --------------------------------------------------------
 
+    
+    
     def _write_manifest(
         self,
         *,
@@ -313,13 +346,13 @@ class BackupEngine:
     ) -> None:
         if backup_root is None:
             backup_root = dst_root.parent
+
         files: list[dict[str, object]] = []
         algo = "sha256"
 
         for rel_path in self._iter_files_relative(src_root):
-            src = src_root / rel_path
+            src = src_root / rel_path if not self._fs.is_file(src_root) else src_root.parent / rel_path
             st = self._fs.stat(src)
-
             d = hash_path(self._fs, src, algo=algo)
 
             files.append(
@@ -340,7 +373,28 @@ class BackupEngine:
             "files": files,
         }
 
+        # --- Business seat ownership tagging (SAFE optional) ---
+        try:
+            from devvault_desktop.config import get_business_seat_identity
+            ident = get_business_seat_identity() or {}
+        except Exception:
+            ident = {}
+
+        if ident:
+            manifest["business_identity"] = {
+                "seat_id": ident.get("seat_id"),
+                "fleet_id": ident.get("fleet_id"),
+                "subscription_id": ident.get("subscription_id"),
+                "device_id": ident.get("assigned_device_id") or ident.get("device_id"),
+                "hostname": ident.get("assigned_hostname") or ident.get("hostname"),
+                "seat_label": ident.get("seat_label"),
+            }
+
         hmac_key = load_manifest_hmac_key(vault_root=backup_root, allow_init=False)
+        if hmac_key is None:
+            raise SnapshotCorrupt(
+                "Business vault manifest HMAC key is missing; refusing to create snapshot."
+            )
         manifest = add_integrity_block(manifest, hmac_key=hmac_key)
 
         manifest_path = dst_root / "manifest.json"
@@ -352,6 +406,10 @@ class BackupEngine:
         )
 
     def _iter_files_relative(self, root: Path):
+        if self._fs.is_file(root):
+            yield Path(root.name)
+            return
+
         for child in self._fs.iterdir(root):
             yield from self._iter_files_relative_inner(root=root, node=child)
 
@@ -367,11 +425,4 @@ class BackupEngine:
         if self._fs.is_file(node):
             yield node.relative_to(root)
             return
-
-
-
-
-
-
-
 

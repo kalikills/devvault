@@ -84,7 +84,7 @@ class RestoreEngine:
         )
         self.fs.write_text(manifest_path, manifest_text, encoding="utf-8")
 
-    def restore(self, req: RestoreRequest) -> None:
+    def restore(self, req: RestoreRequest, cancel_check=None) -> None: # Section7 runtime fix
         # --- Validate snapshot ---
         if not self.fs.exists(req.snapshot_dir):
             raise SnapshotCorrupt("Snapshot directory does not exist.")
@@ -119,8 +119,10 @@ class RestoreEngine:
             vault_root=self._vault_root_for_snapshot(req.snapshot_dir)
         )
 
-        ok, _reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
+        ok, reason = verify_manifest_integrity(manifest, hmac_key=hmac_key)
         if not ok:
+            if reason == "missing-hmac-key":
+                raise SnapshotCorrupt("Business vault manifest HMAC key is missing; refusing restore.")
             raise SnapshotCorrupt("Invalid manifest: integrity check failed.")
 
         validate_crypto_stanza(manifest)
@@ -200,12 +202,25 @@ class RestoreEngine:
                 self.fs.mkdir(parent, parents=True)
 
             if not is_v2:
-                self.fs.copy_file(src, dst)
-                restored_mappings.append((rel_path, rel_path))
-                continue
+                try:
+                    self.fs.copy_file(src, dst)
+                    restored_mappings.append((rel_path, rel_path))
+                    continue
+                except Exception as e:
+                    raise RuntimeError(
+                        "Restore file apply failed: "
+                        f"src={src} | dst={dst} | rel={rel_path} | error={e}"
+                    ) from e
 
             tmp = Path(str(dst) + ".devvault.tmp")
-            self.fs.copy_file(src, tmp)
+
+            try:
+                self.fs.copy_file(src, tmp)
+            except Exception as e:
+                raise RuntimeError(
+                    "Restore temp copy failed: "
+                    f"src={src} | tmp={tmp} | dst={dst} | rel={rel_path} | error={e}"
+                ) from e
 
             try:
                 d = hash_path(self.fs, tmp, algo="sha256")
@@ -213,13 +228,16 @@ class RestoreEngine:
                     raise SnapshotCorrupt("Restore verification failed: checksum mismatch.")
                 self.fs.rename(tmp, dst)
                 restored_mappings.append((rel_path, rel_path))
-            except Exception:
+            except Exception as e:
                 if self.fs.exists(tmp):
                     try:
                         self.fs.unlink(tmp)
                     except Exception:
                         pass
-                raise
+                raise RuntimeError(
+                    "Restore finalize failed: "
+                    f"src={src} | tmp={tmp} | dst={dst} | rel={rel_path} | error={e}"
+                ) from e
 
         # Promote staged restore only after all files verified.
         if staged:

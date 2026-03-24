@@ -6,6 +6,7 @@ from datetime import datetime
 
 from scanner.models import ScanRequest
 from scanner.adapters.filesystem import OSFileSystem
+from scanner.cloud_file_guard import scan_tree_for_cloud_placeholders
 from scanner.ports.filesystem import FileSystemPort
 
 SKIP_DIR_NAMES = {
@@ -17,6 +18,17 @@ SKIP_DIR_NAMES = {
     ".vscode",
     ".vscode-server",
     ".cache",
+    ".devvault",
+    "_bak",
+    "_artifacts",
+    "$recycle.bin",
+    "system volume information",
+    "programdata",
+    "perflogs",
+    "recovery",
+    "crossdevice",
+    "vscode-remote-wsl",
+    "backups",
     "appdata",
     "program files",
     "program files (x86)",
@@ -75,12 +87,52 @@ def dir_size_bytes(
     return total
 
 
+
+def _looks_like_generated_protection_artifact_name(name: str) -> bool:
+    n = (name or "").strip().lower()
+    if not n:
+        return False
+
+    prefixes = (
+        "devvault-clean-backup-",
+        "devvault-ui-",
+        "devvault_source_current",
+    )
+    if any(n.startswith(p) for p in prefixes):
+        return True
+
+    exact_names = {
+        ".devvault",
+        "_artifacts",
+        "_bak",
+    }
+    if n in exact_names:
+        return True
+
+    if n.endswith(" - backup"):
+        return True
+
+    # Timestamped snapshot-like folder/file names:
+    # 20260313-123456-name - backup
+    if len(n) >= 15 and n[:8].isdigit() and n[8] == "-" and n[9:15].isdigit():
+        if " - backup" in n:
+            return True
+
+    return False
+
+
 def is_project_dir(
     p: Path,
     fs: FileSystemPort | None = None,
 ) -> tuple[bool, str]:
 
     fs = fs or OSFileSystem()
+
+    try:
+        if _looks_like_generated_protection_artifact_name(p.name):
+            return False, ""
+    except Exception:
+        return False, ""
 
     if not fs.is_dir(p):
         return False, ""
@@ -98,6 +150,90 @@ def is_project_dir(
         ):
             if fs.exists(p / name):
                 return True, f"has {name}"
+
+    except (PermissionError, FileNotFoundError, OSError):
+        return False, ""
+
+    try:
+        try:
+            parent_name = p.parent.name.strip().lower()
+        except Exception:
+            parent_name = ""
+
+        try:
+            is_drive_child = str(p.parent).rstrip("\\/") == str(Path(p.anchor)).rstrip("\\/")
+        except Exception:
+            is_drive_child = False
+
+        # Prevent broad container roots from being promoted as project candidates.
+        # Explicit markers (.git / pyproject.toml / etc.) above already win.
+        if parent_name == "users":
+            return False, ""
+
+        if is_drive_child:
+            return False, ""
+
+        work_dir_names = {
+            "package",
+            "scanner",
+            "devvault_desktop",
+            "docs",
+            "scripts",
+            "tests",
+            "governance",
+            "launch",
+            "infrastructure",
+            "company",
+            "infra",
+            "web",
+            "website",
+            "legal",
+            "compliance",
+            "brand",
+        }
+        meaningful_suffixes = {
+            ".py",
+            ".ps1",
+            ".md",
+            ".json",
+            ".toml",
+            ".yaml",
+            ".yml",
+            ".ini",
+            ".cfg",
+            ".sql",
+            ".html",
+            ".css",
+            ".js",
+            ".ts",
+            ".tsx",
+            ".jsx",
+            ".txt",
+            ".pdf",
+            ".docx",
+            ".xlsx",
+        }
+
+        child_dir_names: set[str] = set()
+        meaningful_file_count = 0
+
+        for child in fs.iterdir(p):
+            try:
+                name = child.name.strip().lower()
+                if fs.is_dir(child):
+                    child_dir_names.add(name)
+                    continue
+
+                if Path(name).suffix.lower() in meaningful_suffixes:
+                    meaningful_file_count += 1
+            except (PermissionError, FileNotFoundError, OSError):
+                continue
+
+        if len(child_dir_names & work_dir_names) >= 2:
+            return True, "has work directories"
+
+        if len(child_dir_names & work_dir_names) >= 1 and meaningful_file_count >= 2:
+            return True, "has work structure"
 
     except (PermissionError, FileNotFoundError, OSError):
         return False, ""
@@ -127,7 +263,24 @@ def scan_roots(
         try:
             ok, reason = is_project_dir(dir_path, fs=fs)
 
+            
+            # historical / archival working copies should not be promoted as active projects
+            name_lower = dir_path.name.lower()
+            if (
+                "devvault_broken" in name_lower
+                or "pre_vmmerge" in name_lower
+                or name_lower.endswith("_backup")
+                or name_lower.endswith("_old")
+                or name_lower.endswith("_archive")
+            ):
+                dirs_skipped += 1
+                return
+
             if ok:
+                cloud_guard = scan_tree_for_cloud_placeholders(dir_path, max_hits=1)
+                if not cloud_guard.ok:
+                    dirs_skipped += 1
+                    return
                 ts = fs.stat(dir_path).st_mtime
                 size = dir_size_bytes(dir_path, fs=fs)
 
@@ -202,3 +355,4 @@ def scan(req: ScanRequest, fs: FileSystemPort | None = None) -> ScanResult:
         scanned_directories=scanned,
         skipped_directories=skipped,
     )
+
