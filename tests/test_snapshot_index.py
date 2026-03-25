@@ -29,8 +29,8 @@ def test_write_then_load_roundtrip(tmp_path: Path) -> None:
     fs = OSFileSystem()
 
     # Create one valid snapshot dir with manifest
-    snap = tmp_path / "20260206T140102Z-deadbeef"
-    snap.mkdir()
+    snap = tmp_path / ".devvault" / "snapshots" / "20260206T140102Z-deadbeef"
+    snap.mkdir(parents=True)
     manifest = {"manifest_version": 2, "checksum_algo": "sha256", "files": [{"path": "a", "size": 1, "type": "file", "digest_hex": "0" * 64}]}
     (snap / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 

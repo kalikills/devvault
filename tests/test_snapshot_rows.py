@@ -11,8 +11,8 @@ from scanner.snapshot_index import INDEX_DIR_NAME, INDEX_FILE_NAME
 def test_get_snapshot_rows_rebuilds_when_missing_index(tmp_path: Path) -> None:
     fs = OSFileSystem()
 
-    snap = tmp_path / "20260206T140102Z-deadbeef"
-    snap.mkdir()
+    snap = tmp_path / ".devvault" / "snapshots" / "20260206T140102Z-deadbeef"
+    snap.mkdir(parents=True)
     manifest = {"manifest_version": 2, "checksum_algo": "sha256", "files": [{"path": "a", "size": 2, "type": "file", "digest_hex": "0" * 64}]}
     (snap / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
