@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtWidgets import QGraphicsOpacityEffect
 from devvault_desktop.coverage_assurance import compute_uncovered_candidates
+from devvault_desktop.nas_auth import save_windows_nas_credentials
 from devvault_desktop.config import (
     add_protected_root,
     clear_business_seat_identity,
@@ -2106,10 +2107,12 @@ class BusinessHubDialog(QDialog):
         nas_manual_actions = QHBoxLayout()
         self.btn_nas_test_manual = QPushButton("Test Manual UNC")
         self.btn_nas_save_manual = QPushButton("Save Manual UNC")
+        self.btn_nas_login = QPushButton("NAS Login")
 
         for b in (
             self.btn_nas_test_manual,
             self.btn_nas_save_manual,
+            self.btn_nas_login,
         ):
             b.setMinimumHeight(36)
             nas_manual_actions.addWidget(b)
@@ -2359,6 +2362,7 @@ class BusinessHubDialog(QDialog):
         self.btn_nas_save.clicked.connect(self._save_selected_business_nas_candidate)
         self.btn_nas_test_manual.clicked.connect(self._test_manual_business_nas_candidate)
         self.btn_nas_save_manual.clicked.connect(self._save_manual_business_nas_candidate)
+        self.btn_nas_login.clicked.connect(self._login_business_nas_credentials)
         self.btn_nas_initialize.clicked.connect(self.parent()._initialize_business_nas_vault)
         self.btn_add_manual_seat.clicked.connect(self._enroll_seat_from_dialog)
         self.btn_create_invite.clicked.connect(self._create_invite_from_dialog)
@@ -2736,6 +2740,47 @@ class BusinessHubDialog(QDialog):
             "Result: SAVED",
             "Business NAS target updated successfully.",
         ])
+
+
+    def _login_business_nas_credentials(self) -> None:
+        candidate = self.txt_nas_manual.text().strip()
+
+        if not candidate:
+            self._set_nas_banner("NOT CONFIGURED", "Login blocked")
+            self._set_nas_status([
+                "Manual UNC: (empty)",
+                "Result: FAILED",
+                "Enter a UNC path first.",
+            ])
+            return
+
+        username, ok = QInputDialog.getText(self, "NAS Login", "Username:")
+        if not ok or not username.strip():
+            return
+
+        password, ok = QInputDialog.getText(
+            self,
+            "NAS Login",
+            "Password:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok or not password:
+            return
+
+        ok, msg = save_windows_nas_credentials(candidate, username, password)
+        probe_ok, status, probe_msg = self._business_nas_probe(candidate)
+
+        self._set_nas_banner("AUTH OK" if probe_ok else status, "Saved" if probe_ok else "Action required")
+        self._set_nas_status([
+            f"UNC: {candidate}",
+            f"Cred Save: {'OK' if ok else 'FAILED'}",
+            msg,
+            f"Probe: {'OK' if probe_ok else 'FAILED'}",
+            probe_msg,
+        ])
+
+        if probe_ok:
+            self.txt_nas_manual.setText(candidate)
     def _build_historical_seat_records_text(self) -> str:
         try:
             subscription_id = self._business_subscription_id()
@@ -5602,7 +5647,24 @@ class DevVaultQt(QMainWindow):
             return
 
         try:
-            bootstrap_business_vault(Path(nas))
+            nas_path = Path(nas)
+
+            # Ensure NAS root exists
+            if not nas_path.exists():
+                raise Exception("NAS path is not reachable. Verify network share.")
+
+            # Ensure .devvault structure exists
+            dv_root = nas_path / ".devvault"
+            snapshots = dv_root / "snapshots"
+
+            try:
+                dv_root.mkdir(parents=True, exist_ok=True)
+                snapshots.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                raise Exception(f"Failed to prepare vault structure: {e}")
+
+            # Run bootstrap (final authority step)
+            bootstrap_business_vault(nas_path)
         except BusinessVaultBootstrapError as e:
             _centered_message(
                 self,
