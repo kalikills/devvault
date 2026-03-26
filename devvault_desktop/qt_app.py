@@ -8482,7 +8482,7 @@ class DevVaultQt(QMainWindow):
 
         layout = QVBoxLayout(dlg)
 
-        lbl_intro = QLabel("Sign in with your Business admin email/password, or use a one-time seat token.")
+        lbl_intro = QLabel("Sign in using a one-time seat login token (recommended), or admin email/password if mapped to a seat.")
         lbl_intro.setWordWrap(True)
         layout.addWidget(lbl_intro)
 
@@ -8573,6 +8573,14 @@ class DevVaultQt(QMainWindow):
                     token_kwargs["app_version"] = _safe_app_version()
 
                 result = login_business_admin_with_seat_token(**token_kwargs)
+
+                # Normalize seat-token login response to match admin session contract
+                if isinstance(result, dict):
+                    if "seat_role" not in result:
+                        result["seat_role"] = "owner"
+                    if "seat_status" not in result:
+                        result["seat_status"] = "active"
+
             else:
                 result = login_business_admin_with_password(
                     email=email,
@@ -8604,10 +8612,16 @@ class DevVaultQt(QMainWindow):
 
         if seat_role not in {"owner", "admin"} or seat_status != "active":
             self._clear_business_admin_session()
+
+            mode_hint = "Use a seat login token issued from an owner/admin machine."
+            if not seat_token:
+                mode_hint = "Password login must map to an active owner/admin seat. If this fails, use a seat login token."
+
             _centered_message(
                 self,
                 "Business Admin Sign In",
-                "The provided account is not authorized for Business Console access.",
+                "The provided credentials are not mapped to an active owner/admin seat.\n\n"
+                + mode_hint,
             )
             return
 

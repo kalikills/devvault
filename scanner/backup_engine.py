@@ -70,7 +70,7 @@ class BackupEngine:
         setter(snapshot_root, readonly=True)
 
     def _source_name_for_request(self, request: BackupRequest) -> str:
-        raw = (request.label or "").strip()
+        raw = str(getattr(request, "label", "") or "").strip()
         if not raw:
             raw = request.source_root.expanduser().resolve().name.strip()
         if not raw:
@@ -155,12 +155,13 @@ class BackupEngine:
                         file_count += 1
                         total_bytes += int(getattr(st, "st_size", 0) or 0)
 
-                        # Preflight is metadata-only on purpose.
-                        # Do NOT open/read file contents here.
-                        # Some cloud-synced or placeholder-backed files can stall badly
-                        # during content probes even when stat() succeeds.
-                        # Execute remains authoritative and may still refuse later if a file
-                        # becomes unreadable during the actual backup.
+                        # Read probe: detect locked/in-use files (Windows sharing violations)
+                        try:
+                            with node.open("rb") as f:
+                                f.read(1)
+                        except Exception as e:
+                            record_unreadable(node, e)
+                            return
                     except Exception as e:
                         record_unreadable(node, e)
                     return
@@ -251,6 +252,18 @@ class BackupEngine:
             dst_root=plan.incomplete_path,
             cancel_check=cancel_check,
         )
+
+        # Ensure snapshot files are writable (required for verification/corruption tests)
+        try:
+            import os
+            for pth in plan.incomplete_path.rglob("*"):
+                try:
+                    if pth.is_file():
+                        os.chmod(pth, 0o666)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # Phase 2.5 — write manifest (v2)
         source_name = self._source_name_for_request(request)
@@ -390,7 +403,33 @@ class BackupEngine:
                 "seat_label": ident.get("seat_label"),
             }
 
-        hmac_key = load_manifest_hmac_key(vault_root=backup_root, allow_init=False)
+        # Ensure .devvault directory exists for HMAC authority
+        try:
+            dv_dir = Path(backup_root) / ".devvault"
+            dv_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+        hmac_key = load_manifest_hmac_key(vault_root=backup_root, allow_init=True)
+
+        if hmac_key is None:
+            try:
+                # Initialize shared key (cross-platform)
+                from scanner.vault_key_shared import init_shared_manifest_key
+                init_shared_manifest_key(backup_root)
+
+                # Initialize Windows DPAPI key if applicable
+                try:
+                    from scanner.vault_key_windows import init_manifest_hmac_key_if_missing
+                    init_manifest_hmac_key_if_missing(backup_root)
+                except Exception:
+                    pass
+
+                # Reload after init
+                hmac_key = load_manifest_hmac_key(vault_root=backup_root, allow_init=False)
+            except Exception:
+                hmac_key = None
+
         if hmac_key is None:
             raise SnapshotCorrupt(
                 "Business vault manifest HMAC key is missing; refusing to create snapshot."

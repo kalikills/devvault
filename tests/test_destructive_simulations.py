@@ -82,7 +82,19 @@ def test_corrupted_snapshot_refuses(tmp_path: Path) -> None:
     victim = _find_any_payload_file(snapshot_dir)
     orig = victim.read_bytes()
     assert len(orig) > 0
-    victim.write_bytes(orig[: max(1, len(orig) // 2)])
+    # Retry write in case Windows still holds file handle briefly
+    import time
+
+    last_err = None
+    for _ in range(10):
+        try:
+            victim.write_bytes(orig[: max(1, len(orig) // 2)])
+            break
+        except PermissionError as e:
+            last_err = e
+            time.sleep(0.05)
+    else:
+        raise last_err
 
     # 3) Verify should refuse; if it (unexpectedly) passes, restore must refuse.
     v = _run_cli(["verify", "--json", str(snapshot_dir)])
@@ -145,6 +157,10 @@ def test_restore_after_source_destroyed(tmp_path: Path) -> None:
 
     # 4) Verify restored bytes match the original expected content
     actual = _read_tree_bytes(dst)
+
+    # Ignore restore metadata files
+    actual = {k: v for k, v in actual.items() if not k.startswith("_restore_manifest")}
+
     assert actual == expected, f"restored tree mismatch: expected={sorted(expected.keys())} actual={sorted(actual.keys())}"
 
 

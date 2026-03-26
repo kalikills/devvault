@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from scanner.errors import SnapshotCorrupt
 
 from scanner.adapters.filesystem import OSFileSystem
 from scanner.checksum import hash_path
@@ -110,7 +111,7 @@ def test_restore_rejects_manifest_integrity_mismatch(tmp_path: Path) -> None:
     tampered["files"][0]["size"] = tampered["files"][0]["size"] + 1
     manifest_path.write_text(json.dumps(tampered, indent=2, sort_keys=True), encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="integrity check failed"):
+    with pytest.raises(SnapshotCorrupt, match="integrity check failed"):
         engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
 
     # Fail-closed: destination should not be created as a side effect.
@@ -148,7 +149,7 @@ def test_restore_rejects_hmac_manifest_when_key_missing(tmp_path: Path, monkeypa
     # Now simulate restore on a machine without the key: MUST fail closed.
     monkeypatch.delenv("DEVVAULT_MANIFEST_HMAC_KEY_HEX", raising=False)
 
-    with pytest.raises(RuntimeError, match="integrity check failed"):
+    with pytest.raises(SnapshotCorrupt, match="HMAC key is missing"):
         engine.restore(RestoreRequest(snapshot_dir=snapshot, destination_dir=dst))
 
     assert not dst.exists()

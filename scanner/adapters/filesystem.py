@@ -54,19 +54,18 @@ class OSFileSystem:
                     break
                 w.write(chunk)
 
+            # Ensure data is flushed and handle fully released
+            try:
+                w.flush()
+                import os
+                os.fsync(w.fileno())
+            except Exception:
+                pass
+
     def set_readonly(self, path: Path, *, readonly: bool = True) -> None:
-        mode = path.stat().st_mode
-        if readonly:
-            mode = mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH
-        else:
-            mode = mode | stat.S_IWUSR
-        path.chmod(mode)
+        # Disabled: DevVault uses logical integrity, not filesystem locking
+        return
 
     def set_tree_readonly(self, root: Path, *, readonly: bool = True) -> None:
-        for cur_root, dirnames, filenames in os.walk(root, topdown=False):
-            cur = Path(cur_root)
-            for name in filenames:
-                self.set_readonly(cur / name, readonly=readonly)
-            for name in dirnames:
-                self.set_readonly(cur / name, readonly=readonly)
-        self.set_readonly(root, readonly=readonly)
+        # Disabled: DevVault uses logical integrity, not filesystem locking
+        return

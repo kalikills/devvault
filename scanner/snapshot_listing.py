@@ -32,8 +32,11 @@ def list_snapshots(*, fs: FileSystemPort, backup_root: Path) -> list[SnapshotRef
 
     root = snapshot_storage_root(backup_root)
 
+    # Support both new (.devvault/snapshots) and legacy (direct root) layouts
     if not fs.exists(root) or not fs.is_dir(root):
-        return []
+        root = backup_root
+        if not fs.exists(root) or not fs.is_dir(root):
+            return []
 
     out: list[SnapshotRef] = []
 

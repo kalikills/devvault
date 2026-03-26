@@ -180,13 +180,13 @@ def _live_protected_roots() -> list[Path]:
             if md.source_name:
                 legacy_names.add(md.source_name.strip().lower())
 
+    # Always include explicitly protected roots (user intent)
     for remembered in get_protected_roots():
         try:
             rp = Path(remembered).expanduser()
         except Exception:
             continue
-        if rp.name.strip().lower() in legacy_names:
-            roots.append(rp)
+        roots.append(rp)
 
     out: list[Path] = []
     seen: set[str] = set()

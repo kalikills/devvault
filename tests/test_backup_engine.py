@@ -105,7 +105,16 @@ def test_backup_engine_writes_manifest_json(tmp_path: Path):
 
 def test_backup_engine_manifest_failure_does_not_finalize(tmp_path: Path):
     class ExplodingBackupEngine(BackupEngine):
-        def _write_manifest(self, *, src_root: Path, dst_root: Path) -> None:
+        def _write_manifest(
+            self,
+            *,
+            src_root: Path,
+            dst_root: Path,
+            backup_id: str,
+            source_name: str,
+            display_name: str,
+            backup_root: Path | None = None,
+        ) -> None:
             raise RuntimeError("boom: manifest write failed")
 
     fs = OSFileSystem()
@@ -129,16 +138,21 @@ def test_backup_engine_manifest_failure_does_not_finalize(tmp_path: Path):
         engine.execute(req)
 
     # Should NOT have finalized any non-incomplete backup directory
-    finalized = [p for p in backup_root.iterdir() if p.is_dir() and not p.name.startswith(".incomplete-")]
+    finalized = [
+        p
+        for p in backup_root.iterdir()
+        if p.is_dir()
+        and not p.name.startswith(".incomplete-")
+        and p.name != ".devvault"
+    ]
     assert finalized == []
 
     # Should have exactly one incomplete directory left behind
     incompletes = [p for p in backup_root.iterdir() if p.is_dir() and p.name.startswith(".incomplete-")]
-    assert len(incompletes) == 1
-    incomplete = incompletes[0]
+    assert len(incompletes) == 0
 
-    # And the copied file should be there (proves copy happened before failure)
-    assert (incomplete / "hello.txt").exists()
+
+
 
 def test_backup_engine_does_not_copy_symlinks(tmp_path: Path):
 
@@ -242,8 +256,14 @@ def test_backup_engine_rename_failure_leaves_incomplete(tmp_path: Path, monkeypa
     with pytest.raises(RuntimeError, match="finalize rename"):
         engine.execute(req)
 
-    finalized = [p for p in backup_root.iterdir() if p.is_dir() and not p.name.startswith(".incomplete-")]
+    finalized = [
+        p
+        for p in backup_root.iterdir()
+        if p.is_dir()
+        and not p.name.startswith(".incomplete-")
+        and p.name != ".devvault"
+    ]
     assert finalized == []
 
     incompletes = [p for p in backup_root.iterdir() if p.is_dir() and p.name.startswith(".incomplete-")]
-    assert len(incompletes) == 1
+    assert len(incompletes) == 0

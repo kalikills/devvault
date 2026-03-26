@@ -67,17 +67,11 @@ def load_manifest_hmac_key_from_env() -> ManifestHmacKey | None:
         return None
     return ManifestHmacKey(key_bytes=b)
 
-def load_manifest_hmac_key(*, vault_root: Path | None = None, allow_init: bool = False) -> ManifestHmacKey | None:
-    """Enterprise-leaning key resolution.
-
-    Order:
-      1) If vault_root is provided: prefer shared vault-managed key.
-      2) Fallback to legacy DPAPI vault-managed key for migration compatibility.
-      3) Fallback to env-based keying (master-derived preferred, then legacy manifest key).
-
-    `allow_init` is retained for call compatibility but no longer creates vault keys here.
-    Vault key creation is bootstrap-authority driven.
-    """
+def load_manifest_hmac_key(
+    *,
+    vault_root: Path | str | None = None,
+    allow_init: bool = False,
+) -> ManifestHmacKey | None:
     if vault_root is not None:
         vr = Path(vault_root)
 
@@ -88,6 +82,27 @@ def load_manifest_hmac_key(*, vault_root: Path | None = None, allow_init: bool =
         kb_legacy = try_load_manifest_hmac_key(vr)
         if kb_legacy is not None:
             return ManifestHmacKey(key_bytes=kb_legacy)
+
+        if allow_init:
+            try:
+                from scanner.vault_key_shared import init_shared_manifest_key
+                init_shared_manifest_key(vr)
+            except Exception:
+                pass
+
+            try:
+                from scanner.vault_key_windows import init_manifest_hmac_key_if_missing
+                init_manifest_hmac_key_if_missing(vr)
+            except Exception:
+                pass
+
+            kb_shared = try_load_shared_manifest_key(vr)
+            if kb_shared is not None:
+                return ManifestHmacKey(key_bytes=kb_shared)
+
+            kb_legacy = try_load_manifest_hmac_key(vr)
+            if kb_legacy is not None:
+                return ManifestHmacKey(key_bytes=kb_legacy)
 
     return load_manifest_hmac_key_from_env()
 
