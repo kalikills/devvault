@@ -11,9 +11,22 @@ class NASNotConfiguredError(RuntimeError):
 
 def _is_unc_path(raw: str) -> bool:
     value = str(raw or "").strip()
-    return value.startswith("\\")
 
+    # Must start with UNC prefix
+    if not value.startswith('\\'):
+        return False
 
+    # Must contain \server\share
+    parts = [p for p in value.split('\\') if p]
+
+    if len(parts) < 2:
+        return False
+
+    # Ensure share separator exists
+    if '\\' not in value[2:]:
+        return False
+
+    return True
 
 def enforce_business_nas_requirement(
     *,

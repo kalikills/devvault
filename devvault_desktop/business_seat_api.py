@@ -5,6 +5,7 @@ import os
 import urllib.error
 import urllib.request
 from typing import Any
+from devvault_desktop.business_runtime_config import get_business_api_base_url
 
 
 DEFAULT_TIMEOUT_SECONDS = 20.0
@@ -35,7 +36,7 @@ def _require_env(name: str) -> str:
 
 
 def _api_base_url() -> str:
-    return _require_env("DEVVAULT_BUSINESS_API_BASE_URL").rstrip("/")
+    return get_business_api_base_url()
 
 
 def _api_bearer_token() -> str:
@@ -205,6 +206,34 @@ def reset_business_admin_password(
             "email": email,
             "current_password": current_password,
             "new_password": new_password,
+        },
+    )
+
+
+
+
+def claim_business_seat_by_hostname(
+    *,
+    hostname: str,
+    email: str,
+    device_id: str,
+    app_version: str,
+) -> dict[str, Any]:
+    hostname = hostname.strip()
+    email = email.strip().lower()
+    device_id = device_id.strip()
+    app_version = app_version.strip()
+
+    if not hostname:
+        raise BusinessSeatApiError("hostname is required")
+
+    return _post_json(
+        "/api/business/seats/claim",
+        {
+            "hostname": hostname,
+            "email": email,
+            "device_id": device_id,
+            "app_version": app_version,
         },
     )
 

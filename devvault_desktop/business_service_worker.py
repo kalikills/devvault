@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from devvault_desktop.business_runtime_config import get_business_api_base_url
 
 
 APP_NAME = "DevVault"
@@ -406,8 +407,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--api-base-url",
-        default=os.environ.get(DEFAULT_API_BASE_ENV, "").strip() or None,
-        help="Business API base URL. Defaults to DEVVAULT_BUSINESS_API_BASE_URL.",
+        default=get_business_api_base_url() or None,
+        help="Business API base URL. Defaults to ProgramData runtime config, then built-in production URL, with DEVVAULT_BUSINESS_API_BASE_URL as override.",
     )
     parser.add_argument(
         "--interval",
@@ -435,9 +436,7 @@ def main(argv: list[str] | None = None) -> int:
 
     api_base_url = str(args.api_base_url or "").strip()
     if not api_base_url:
-        raise RuntimeError(
-            "No Business API base URL provided. Set DEVVAULT_BUSINESS_API_BASE_URL or pass --api-base-url."
-        )
+        raise RuntimeError("No Business API base URL available.")
 
     worker = BusinessServiceWorker.from_local_config(
         api_base_url=api_base_url,

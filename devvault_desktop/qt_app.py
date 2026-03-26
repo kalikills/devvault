@@ -84,6 +84,7 @@ from devvault_desktop.business_fetchers import (
     SeatProtectionStateFetcher,
     VaultHealthIntelligenceFetcher,
 )
+from devvault_desktop.business_runtime_config import ensure_business_runtime_config
 from devvault_desktop.business_seat_api import (
     BusinessSeatApiError,
     create_business_invite,
@@ -92,6 +93,7 @@ from devvault_desktop.business_seat_api import (
     list_business_invites,
     list_business_seats,
     login_business_admin_with_password,
+    login_business_admin_with_seat_token,
     resend_business_invite,
     reset_business_admin_password,
     revoke_business_invite,
@@ -2980,17 +2982,33 @@ class BusinessHubDialog(QDialog):
 
     def _show_admin_live_view(self) -> None:
         try:
+            self.surface.setCurrentWidget(self.admin_widget)
+        except Exception:
+            pass
+
+        try:
             self.admin_report.setPlainText(
                 self.parent()._build_business_administrative_visibility_report_text()
             )
             self._set_admin_mode_text("Live Administrative Visibility")
-            self.surface.setCurrentWidget(self.admin_widget)
         except Exception as e:
-            self.admin_report.setPlainText(
-                "Failed to load Administrative Visibility.\n\n"
-                f"{e}"
-            )
-            self._set_admin_mode_text("Live Administrative Visibility (Error)")
+            try:
+                self.admin_report.setPlainText(
+                    "Failed to load Administrative Visibility.\n\n"
+                    f"{e}"
+                )
+            except Exception:
+                pass
+            try:
+                self._set_admin_mode_text("Live Administrative Visibility (Error)")
+            except Exception:
+                pass
+            try:
+                self.parent().append_log(
+                    f"Administrative Visibility load failed: {e}"
+                )
+            except Exception:
+                pass
 
     def _fit_to_available_screen(self) -> None:
         try:
@@ -4706,6 +4724,43 @@ class BusinessHubDialog(QDialog):
                 QMessageBox.Icon.Critical,
             )
 
+    def _seat_role_for_server_seat_id(self, seat_id: str) -> str:
+        normalized_seat_id = str(seat_id or "").strip()
+        if not normalized_seat_id:
+            return ""
+
+        try:
+            subscription_id = self._business_subscription_id()
+            api_payload = list_business_seats(subscription_id)
+            rows = normalize_business_seat_rows(api_payload)
+        except Exception:
+            return ""
+
+        for row in rows:
+            if str(getattr(row, "seat_id", "") or "").strip() == normalized_seat_id:
+                return str(getattr(row, "seat_role", "") or "").strip().lower()
+
+        return ""
+
+    def _owner_seat_mutation_blocked(self, seat_id: str, action_name: str) -> bool:
+        role = self._seat_role_for_server_seat_id(seat_id)
+        if role != "owner":
+            return False
+
+        _centered_message(
+            self,
+            f"{action_name} Blocked",
+            (
+                "Owner seat is protected and cannot be changed from the desktop app.\n\n"
+                "Owner role issuance, reassignment, revoke, and recovery must be performed "
+                "only by Trustware control-plane support."
+            ),
+            QMessageBox.StandardButton.Ok,
+            QMessageBox.StandardButton.Ok,
+            QMessageBox.Icon.Warning,
+        )
+        return True
+
     def _reset_or_reassign_local_seat_identity(self) -> None:
         try:
             identity = get_business_seat_identity()
@@ -4731,6 +4786,10 @@ class BusinessHubDialog(QDialog):
             assigned_hostname = str(identity.get("assigned_hostname") or "").strip() or "n/a"
             seat_label = str(identity.get("seat_label") or "").strip() or "n/a"
             enrolled_at_utc = str(identity.get("enrolled_at_utc") or "").strip() or "n/a"
+
+            if stored_seat_id and stored_seat_id != "n/a":
+                if self._owner_seat_mutation_blocked(stored_seat_id, "Reset / Reassign Seat Identity"):
+                    return
 
             answer = _centered_message(
                 self,
@@ -5127,6 +5186,9 @@ class BusinessHubDialog(QDialog):
 
             ok, selected_seat_id = RevokeSeatDialog.ask(self, seat_choices)
             if not ok or not str(selected_seat_id).strip():
+                return
+
+            if self._owner_seat_mutation_blocked(str(selected_seat_id).strip(), "Revoke Seat"):
                 return
 
             answer = _centered_message(
@@ -5598,8 +5660,97 @@ class DevVaultQt(QMainWindow):
 
             if not isinstance(identity, dict) or not str(identity.get("seat_id") or "").strip():
                 try:
-                    bootstrap_hub = BusinessHubDialog(self)
-                    bootstrap_hub._enroll_seat_from_dialog()
+                    import json
+                    import socket
+
+                    assigned_email, ok = QInputDialog.getText(
+                        self,
+                        "Seat Activation",
+                        "Enter your email:",
+                        QLineEdit.Normal,
+                        "",
+                    )
+                    if not ok or not str(assigned_email).strip():
+                        return
+
+                    invite_token, ok = QInputDialog.getText(
+                        self,
+                        "Seat Activation",
+                        "Paste invite token:",
+                        QLineEdit.Normal,
+                        "",
+                    )
+                    if not ok or not str(invite_token).strip():
+                        return
+
+                    raw = read_installed_license_text()
+                    if not raw.strip():
+                        raise RuntimeError("Installed Business license not found.")
+
+                    lic_doc = json.loads(raw)
+                    lic_payload = lic_doc.get("payload", {}) if isinstance(lic_doc, dict) else {}
+
+                    subscription_id = str(lic_payload.get("subscription_id") or "").strip()
+                    customer_id = str(lic_payload.get("customer_id") or "").strip()
+
+                    if not subscription_id:
+                        raise RuntimeError("Installed license is missing subscription_id.")
+                    if not customer_id:
+                        raise RuntimeError("Installed license is missing customer_id.")
+
+                    hostname = (
+                        str(os.environ.get("COMPUTERNAME") or "").strip()
+                        or str(os.environ.get("HOSTNAME") or "").strip()
+                        or socket.gethostname().strip()
+                    )
+
+                    try:
+                        response = enroll_business_seat(
+                            subscription_id=subscription_id,
+                            customer_id=customer_id,
+                            assigned_email=str(assigned_email).strip(),
+                            assigned_device_id=hostname,
+                            assigned_hostname=hostname,
+                            seat_label=hostname,
+                            notes="",
+                            invite_token=str(invite_token).strip(),
+                            candidate_seat_id="",
+                            display_name=hostname,
+                            hostname=hostname,
+                            app_version=_safe_app_version(),
+                            installed_license=_collect_installed_license_context(),
+                            vault_evidence=_collect_vault_evidence_summary(),
+                            fingerprint_hash=_compute_device_fingerprint(),
+                        )
+                    except BusinessSeatApiError as e:
+                        payload = dict(getattr(e, "payload", {}) or {})
+                        if int(getattr(e, "status_code", 0) or 0) == 409 and str(payload.get("reason") or "").strip().lower() == "seat_identity_exists":
+                            response = payload
+                        else:
+                            raise
+
+                    seat_id = str(response.get("seat_id") or "").strip()
+                    fleet_id = str(response.get("fleet_id") or "").strip()
+
+                    if not seat_id:
+                        raise RuntimeError("Seat activation did not return a seat_id.")
+
+                    set_business_seat_identity(
+                        seat_id=seat_id,
+                        fleet_id=fleet_id,
+                        subscription_id=subscription_id,
+                        customer_id=customer_id,
+                        assigned_email=str(response.get("assigned_email") or assigned_email).strip(),
+                        assigned_device_id=str(response.get("assigned_device_id") or hostname).strip(),
+                        assigned_hostname=str(response.get("assigned_hostname") or hostname).strip(),
+                        seat_label=str(response.get("seat_label") or hostname).strip(),
+                    )
+
+                    _centered_message(
+                        self,
+                        "Seat Activation",
+                        "Seat activation completed successfully. Please restart DevVault.",
+                    )
                 except Exception as exc:
                     _centered_message(
                         self,
@@ -6841,6 +6992,9 @@ class DevVaultQt(QMainWindow):
             )
 
     def _run_startup_validation_if_due(self) -> None:
+
+
+
         try:
             st = check_license()
         except Exception as e:
@@ -8108,7 +8262,42 @@ class DevVaultQt(QMainWindow):
         return session
 
     def _business_admin_session_allowed(self) -> bool:
-        return self._current_business_admin_session() is not None
+        session = self._current_business_admin_session()
+        if isinstance(session, dict):
+            try:
+                seat_role = str(session.get("seat_role") or "").strip().lower()
+                seat_status = str(session.get("seat_status") or "").strip().lower()
+                if seat_role in {"owner", "admin"} and seat_status == "active":
+                    return True
+            except Exception:
+                pass
+
+        try:
+            identity = get_business_seat_identity()
+        except Exception:
+            identity = None
+
+        try:
+            if isinstance(identity, dict):
+                role = str(
+                    identity.get("seat_role")
+                    or identity.get("role")
+                    or ""
+                ).strip().lower()
+
+                seat_id = str(identity.get("seat_id") or "").strip().lower()
+                seat_label = str(identity.get("seat_label") or "").strip().lower()
+
+                if not role:
+                    if seat_id.startswith("seat_owner_") or " owner" in f" {seat_label} ":
+                        role = "owner"
+
+                if role == "owner" and self._runtime_local_identity_matches(identity):
+                    return True
+        except Exception:
+            pass
+
+        return False
 
     def _require_business_admin_session(self, action_name: str = "This action") -> bool:
         if self._business_admin_session_allowed():
@@ -8193,7 +8382,7 @@ class DevVaultQt(QMainWindow):
 
         layout = QVBoxLayout(dlg)
 
-        lbl_intro = QLabel("Sign in with your Business admin email and password.")
+        lbl_intro = QLabel("Sign in with your Business admin email/password, or use a one-time seat token.")
         lbl_intro.setWordWrap(True)
         layout.addWidget(lbl_intro)
 
@@ -8205,6 +8394,10 @@ class DevVaultQt(QMainWindow):
         txt_password.setPlaceholderText("Password")
         txt_password.setEchoMode(QLineEdit.EchoMode.Password)
         layout.addWidget(txt_password)
+
+        txt_token = QLineEdit(dlg)
+        txt_token.setPlaceholderText("One-time seat token (optional)")
+        layout.addWidget(txt_token)
 
         btn_row = QHBoxLayout()
         btn_sign_in = QPushButton("Sign In", dlg)
@@ -8238,6 +8431,7 @@ class DevVaultQt(QMainWindow):
 
         email = str(txt_email.text() or "").strip().lower()
         password = str(txt_password.text() or "").strip()
+        seat_token = str(txt_token.text() or "").strip()
 
         if not email:
             _centered_message(
@@ -8247,11 +8441,11 @@ class DevVaultQt(QMainWindow):
             )
             return
 
-        if not password:
+        if not password and not seat_token:
             _centered_message(
                 self,
                 "Business Admin Sign In",
-                "Password is required.",
+                "Enter either a password or a one-time seat token.",
             )
             return
 
@@ -8263,19 +8457,37 @@ class DevVaultQt(QMainWindow):
         device_id = hostname
 
         try:
-            result = login_business_admin_with_password(
-                email=email,
-                password=password,
-                hostname=hostname,
-                device_id=device_id,
-                app_version=_safe_app_version(),
-            )
+            if seat_token:
+                from inspect import signature
+
+                token_kwargs = {"seat_token": seat_token}
+                sig = signature(login_business_admin_with_seat_token)
+
+                if "email" in sig.parameters:
+                    token_kwargs["email"] = email
+                if "hostname" in sig.parameters:
+                    token_kwargs["hostname"] = hostname
+                if "device_id" in sig.parameters:
+                    token_kwargs["device_id"] = device_id
+                if "app_version" in sig.parameters:
+                    token_kwargs["app_version"] = _safe_app_version()
+
+                result = login_business_admin_with_seat_token(**token_kwargs)
+            else:
+                result = login_business_admin_with_password(
+                    email=email,
+                    password=password,
+                    hostname=hostname,
+                    device_id=device_id,
+                    app_version=_safe_app_version(),
+                )
         except BusinessSeatApiError as e:
             self._clear_business_admin_session()
+            mode_label = "seat token" if seat_token else "email/password"
             _centered_message(
                 self,
                 "Business Admin Sign In",
-                f"Could not sign in with email/password.\n\n{e}",
+                f"Could not sign in with {mode_label}.\n\n{e}",
             )
             return
         except Exception as e:
@@ -8451,10 +8663,13 @@ class DevVaultQt(QMainWindow):
         )
 
     def open_business_tools(self) -> None:
+        ensure_business_runtime_config()
+
         if not self._require_action_entitlement(
             "biz_seat_admin_tools",
             action_name="Business Tools",
         ):
+            ensure_business_runtime_config()
             return
 
         try:
@@ -8463,19 +8678,14 @@ class DevVaultQt(QMainWindow):
             identity = None
 
         if not isinstance(identity, dict) or not str(identity.get("seat_id") or "").strip():
-            choice = _centered_message(
+            _centered_message(
                 self,
-                "Join Business Fleet",
+                "Business Tools",
                 (
                     "This device is not enrolled in the Business fleet yet.\n\n"
-                    "Open the fleet join flow now?"
+                    "Use Seat Activation from the Tools menu first."
                 ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes,
-                QMessageBox.Icon.Information,
             )
-            if choice == QMessageBox.StandardButton.Yes:
-                self._enroll_seat_from_dialog()
             return
 
         try:
@@ -8494,7 +8704,44 @@ class DevVaultQt(QMainWindow):
             )
             return
 
-        if not self._business_admin_session_allowed():
+        owner_local_access = False
+        try:
+            identity_role = ""
+            if isinstance(identity, dict):
+                identity_role = str(
+                    identity.get("seat_role")
+                    or identity.get("role")
+                    or ""
+                ).strip().lower()
+
+                if not identity_role:
+                    seat_id = str(identity.get("seat_id") or "").strip().lower()
+                    seat_label = str(identity.get("seat_label") or "").strip().lower()
+                    if seat_id.startswith("seat_owner_") or " owner" in f" {seat_label} ":
+                        identity_role = "owner"
+
+            owner_local_access = (
+                isinstance(identity, dict)
+                and identity_role == "owner"
+                and not getattr(self, "_local_seat_identity_mismatch", False)
+            )
+        except Exception:
+            owner_local_access = False
+
+        if owner_local_access and not isinstance(self._current_business_admin_session(), dict):
+            try:
+                self._business_admin_session = {
+                    "seat_role": "owner",
+                    "seat_status": "active",
+                    "seat_id": str(identity.get("seat_id") or "").strip(),
+                    "email": str(identity.get("assigned_email") or "").strip(),
+                    "session_expires_at": "",
+                }
+                self._start_business_admin_session_watchdog()
+            except Exception:
+                pass
+
+        if not owner_local_access and not self._business_admin_session_allowed():
             _centered_message(
                 self,
                 "Business Tools",
@@ -9005,7 +9252,7 @@ class DevVaultQt(QMainWindow):
             "DEVVAULT BUSINESS ADMINISTRATIVE VISIBILITY",
             "===========================================",
             "",
-            f"Generated (UTC): {__import__('datetime').datetime.utcnow().isoformat()}Z",
+            f"Generated (UTC): {__import__('datetime').datetime.now(timezone.utc).isoformat()}Z",
             f"Vault Path: {nas_path or 'n/a'}",
             "",
             "BUSINESS GOVERNANCE POSTURE",

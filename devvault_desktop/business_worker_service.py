@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from devvault_desktop.business_service_worker import BusinessServiceWorker
+from devvault_desktop.business_runtime_config import get_business_api_base_url
 
 
 class DevVaultBusinessWorkerService(win32serviceutil.ServiceFramework):
@@ -33,9 +34,9 @@ class DevVaultBusinessWorkerService(win32serviceutil.ServiceFramework):
         win32event.SetEvent(self.stop_event)
 
     def _run_worker(self):
-        api_base_url = os.environ.get("DEVVAULT_BUSINESS_API_BASE_URL", "").strip()
+        api_base_url = get_business_api_base_url().strip()
         if not api_base_url:
-            raise RuntimeError("DEVVAULT_BUSINESS_API_BASE_URL is not set.")
+            raise RuntimeError("Business API base URL is not available.")
 
         interval_raw = os.environ.get("DEVVAULT_BUSINESS_WORKER_INTERVAL", "").strip()
         try:
