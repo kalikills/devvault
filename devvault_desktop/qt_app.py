@@ -8790,7 +8790,7 @@ class DevVaultQt(QMainWindow):
         except Exception:
             owner_local_access = False
 
-        if owner_local_access and not isinstance(self._current_business_admin_session(), dict):
+        if owner_local_access:
             try:
                 self._business_admin_session = {
                     "seat_role": "owner",
