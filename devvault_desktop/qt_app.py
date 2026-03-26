@@ -2795,10 +2795,12 @@ class BusinessHubDialog(QDialog):
         except Exception as e:
             return f"Failed to load historical seat records.\n\n{e}"
 
+        active_statuses = {"active", "enrolled", "assigned"}
+
         historical_rows = [
             row
             for row in rows
-            if str(row.seat_status or "").strip().lower() != "active"
+            if str(row.seat_status or "").strip().lower() not in active_statuses
         ]
 
         lines = [
@@ -3244,7 +3246,12 @@ class BusinessHubDialog(QDialog):
                 banner = ""
 
             if "UNPROTECTED" in banner:
-                return "Unprotected"
+                try:
+                    msg = str(self.parent().protection_status_message.text() or "").strip()
+                except Exception:
+                    msg = ""
+                return f"Unprotected — {msg}" if msg else "Unprotected"
+
             if "PROTECTED" in banner:
                 return "Protected"
 
@@ -3275,9 +3282,11 @@ class BusinessHubDialog(QDialog):
             )
             return
 
+        active_statuses = {"active", "enrolled", "assigned"}
+
         active_rows = [
             row for row in rows
-            if str(getattr(row, "seat_status", "") or "").strip().lower() == "active"
+            if str(getattr(row, "seat_status", "") or "").strip().lower() in active_statuses
         ]
 
         try:
@@ -6086,37 +6095,16 @@ class DevVaultQt(QMainWindow):
             except Exception:
                 seat_limit = 0
 
-            active_seat_ids: set[str] = set()
+            # Server-authoritative active seat count ONLY
             try:
-                if nas_path:
-                    import json
-
-                    index_path = Path(nas_path) / ".devvault" / "snapshot_index.json"
-                    if index_path.exists():
-                        raw_index = json.loads(index_path.read_text(encoding="utf-8"))
-                        for row in raw_index.get("snapshots", []) or []:
-                            if not isinstance(row, dict):
-                                continue
-                            seat_id = str(row.get("seat_id") or "").strip()
-                            if seat_id:
-                                active_seat_ids.add(seat_id)
+                active_seat_count = int(
+                    api_payload.get("active_seat_count")
+                    or api_payload.get("total_active_seats")
+                    or api_payload.get("seats_used")
+                    or 0
+                )
             except Exception:
-                active_seat_ids = set()
-
-            active_seat_count = len(active_seat_ids)
-            if active_seat_count <= 0:
-                try:
-                    active_seat_count = int(
-                        api_payload.get("active_seat_count")
-                        or api_payload.get("total_active_seats")
-                        or api_payload.get("seats_used")
-                        or 0
-                    )
-                except Exception:
-                    active_seat_count = 0
-
-            if active_seat_count <= 0:
-                active_seat_count = len(request.selected_seats)
+                active_seat_count = 0
 
             return {
                 "seats_protected": seat_raw.get("protected", "?"),
@@ -7642,16 +7630,32 @@ class DevVaultQt(QMainWindow):
         def _do_cancel() -> None:
             self.append_log("Scan cancelled by operator.")
             self._scan_cancelled = True
+
+            try:
+                w = getattr(self, "_scan_worker", None)
+                if w is not None and hasattr(w, "cancel"):
+                    w.cancel()
+            except Exception:
+                pass
+
             try:
                 t = getattr(self, "_scan_thread", None)
                 if t is not None:
                     t.requestInterruption()
+                    t.quit()
             except Exception:
                 pass
+
             try:
                 ov = getattr(self, "op_overlay", None)
                 if ov:
                     ov.btn_cancel.setEnabled(False)
+                    ov.stop(allow_close=True)
+            except Exception:
+                pass
+
+            try:
+                self._set_busy(False)
             except Exception:
                 pass
 
