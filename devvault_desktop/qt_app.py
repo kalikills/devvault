@@ -2702,6 +2702,9 @@ class BusinessHubDialog(QDialog):
             "Result: SAVED",
             "Business NAS target updated successfully.",
         ])
+        self._force_restart_for_runtime_refresh(
+            "Business NAS target updated successfully. DevVault will now restart to refresh vault authority and runtime state."
+        )
 
     def _test_manual_business_nas_candidate(self) -> None:
         candidate = self.txt_nas_manual.text().strip()
@@ -2740,6 +2743,9 @@ class BusinessHubDialog(QDialog):
             "Result: SAVED",
             "Business NAS target updated successfully.",
         ])
+        self._force_restart_for_runtime_refresh(
+            "Business NAS target updated successfully. DevVault will now restart to refresh vault authority and runtime state."
+        )
 
 
     def _login_business_nas_credentials(self) -> None:
@@ -5627,6 +5633,36 @@ class DevVaultQt(QMainWindow):
 
 
     
+    def _restart_devvault_app(self) -> None:
+        import subprocess
+        import sys
+
+        try:
+            subprocess.Popen([sys.executable, *sys.argv], close_fds=False)
+        except Exception as e:
+            _centered_message(
+                self,
+                "Restart Failed",
+                f"DevVault could not restart automatically.\n\n{e}",
+            )
+            return
+
+        try:
+            QApplication.quit()
+        except Exception:
+            try:
+                self.close()
+            except Exception:
+                pass
+
+    def _force_restart_for_runtime_refresh(self, reason: str) -> None:
+        _centered_message(
+            self,
+            "Restarting DevVault",
+            reason,
+        )
+        self._restart_devvault_app()
+
     def _initialize_business_nas_vault(self) -> None:
         from pathlib import Path
         from devvault_desktop.business_vault_bootstrap import (
@@ -5808,10 +5844,8 @@ class DevVaultQt(QMainWindow):
                         seat_label=str(response.get("seat_label") or hostname).strip(),
                     )
 
-                    _centered_message(
-                        self,
-                        "Seat Activation",
-                        "Seat activation completed successfully. Please restart DevVault.",
+                    self._force_restart_for_runtime_refresh(
+                        "Seat activation completed successfully. DevVault will now restart to load the enrolled seat identity."
                     )
                 except Exception as exc:
                     _centered_message(
