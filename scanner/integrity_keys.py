@@ -90,12 +90,6 @@ def load_manifest_hmac_key(
             except Exception:
                 pass
 
-            try:
-                from scanner.vault_key_windows import init_manifest_hmac_key_if_missing
-                init_manifest_hmac_key_if_missing(vr)
-            except Exception:
-                pass
-
             kb_shared = try_load_shared_manifest_key(vr)
             if kb_shared is not None:
                 return ManifestHmacKey(key_bytes=kb_shared)

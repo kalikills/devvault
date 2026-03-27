@@ -82,13 +82,21 @@ def validate_business_vault_authority(nas_root: Path) -> VaultAuthorityValidatio
                 "Business NAS vault is not fully initialized.",
             )
 
-    key_candidates = list(dv.glob("manifest_hmac_key*"))
+    shared_key = dv / "manifest_hmac_key.shared"
+    dpapi_key = dv / "manifest_hmac_key.dpapi.b64"
 
-    if not key_candidates:
+    if not shared_key.exists():
         return VaultAuthorityValidationResult(
             False,
             VaultAuthorityState.KEY_MISSING,
-            "Business NAS vault key material is missing.",
+            "Business NAS vault shared key is missing. Reinitialize or repair vault.",
+        )
+
+    if dpapi_key.exists():
+        return VaultAuthorityValidationResult(
+            False,
+            VaultAuthorityState.STRUCTURE_INVALID,
+            "Business NAS vault contains invalid machine-bound key material. Repair required.",
         )
 
     try:

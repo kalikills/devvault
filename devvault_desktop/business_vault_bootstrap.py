@@ -4,6 +4,8 @@ import uuid
 import socket
 from datetime import datetime, timezone
 from scanner.vault_key_shared import init_shared_manifest_key
+from scanner.adapters.filesystem import OSFileSystem
+from scanner.snapshot_index import repair_snapshot_index
 
 
 class BusinessVaultBootstrapError(Exception):
@@ -58,6 +60,7 @@ def bootstrap_business_vault(nas_root: Path) -> None:
     _atomic_write_json(init_file, initializing_doc)
 
     init_shared_manifest_key(nas_root)
+    repair_snapshot_index(fs=OSFileSystem(), backup_root=nas_root)
 
     ready_doc = dict(initializing_doc)
     ready_doc["state"] = "ready"

@@ -4744,6 +4744,10 @@ class BusinessHubDialog(QDialog):
                         QMessageBox.Icon.Warning,
                     )
                 else:
+                    seat_role = str(response.get("seat_role") or "").strip()
+                    if not seat_role:
+                        seat_role = self._seat_role_for_server_seat_id(seat_id)
+
                     set_business_seat_identity(
                         seat_id=seat_id,
                         fleet_id=str(response.get("fleet_id") or "").strip(),
@@ -4753,8 +4757,22 @@ class BusinessHubDialog(QDialog):
                         assigned_device_id=str(payload["assigned_device_id"]).strip(),
                         assigned_hostname=str(payload["assigned_hostname"]).strip(),
                         seat_label=str(payload["seat_label"]).strip(),
+                        seat_role=seat_role,
                     )
                     self._refresh_local_seat_identity_status()
+
+                    # Force password bootstrap for owner/admin seats
+                    try:
+                        if seat_role in {"owner", "admin"}:
+                            reset_ok = self._business_admin_force_password_reset(
+                                email=str(payload["assigned_email"]).strip(),
+                                current_password="",
+                            )
+                            if not reset_ok:
+                                return
+                    except Exception:
+                        pass
+
                     self._maybe_force_business_nas_onboarding(
                         reason="Business seat enrollment completed. NAS setup is now required.",
                         prompt_once=False,
@@ -5643,26 +5661,81 @@ class DevVaultQt(QMainWindow):
 
     
     def _restart_devvault_app(self) -> None:
+        import os
         import subprocess
         import sys
+        from PySide6.QtCore import QCoreApplication, QProcess, QTimer
+
+        app_path = ""
+        args: list[str] = []
 
         try:
-            subprocess.Popen([sys.executable, *sys.argv], close_fds=False)
-        except Exception as e:
+            app_path = str(QCoreApplication.applicationFilePath() or "").strip()
+        except Exception:
+            app_path = ""
+
+        try:
+            args = [str(x) for x in QCoreApplication.arguments()[1:]]
+        except Exception:
+            args = []
+
+        if not app_path:
+            app_path = str(sys.executable or "").strip()
+
+        if not app_path:
             _centered_message(
                 self,
                 "Restart Failed",
-                f"DevVault could not restart automatically.\n\n{e}",
+                "DevVault could not determine the application path for automatic restart.",
+            )
+            return
+
+        workdir = ""
+        try:
+            workdir = str(Path(app_path).resolve().parent)
+        except Exception:
+            try:
+                workdir = os.path.dirname(app_path)
+            except Exception:
+                workdir = ""
+
+        started = False
+        last_error = ""
+
+        try:
+            started = bool(QProcess.startDetached(app_path, args, workdir or ""))
+        except Exception as e:
+            last_error = str(e)
+
+        if not started:
+            try:
+                subprocess.Popen(
+                    [app_path, *args],
+                    cwd=workdir or None,
+                    close_fds=False,
+                )
+                started = True
+            except Exception as e:
+                last_error = str(e)
+
+        if not started:
+            _centered_message(
+                self,
+                "Restart Failed",
+                f"DevVault could not restart automatically.\n\n{last_error}",
             )
             return
 
         try:
-            QApplication.quit()
+            QTimer.singleShot(150, QApplication.quit)
         except Exception:
             try:
-                self.close()
+                QApplication.quit()
             except Exception:
-                pass
+                try:
+                    self.close()
+                except Exception:
+                    pass
 
     def _force_restart_for_runtime_refresh(self, reason: str) -> None:
         _centered_message(
@@ -7162,7 +7235,19 @@ class DevVaultQt(QMainWindow):
             _centered_message(
                 self,
                 "License Installed",
-                f"License installed successfully.\n\nLicensed to: {claims.licensee}\nInstalled at: {dest}",
+                (
+                    f"License installed successfully.\\n\\n"
+                    f"Licensed to: {claims.licensee}\\n"
+                    f"Installed at: {dest}"
+                ),
+            )
+        except Exception:
+            pass
+
+        # FORCE RESTART AFTER LICENSE INSTALL (CORRECT LOCATION)
+        try:
+            self._force_restart_for_runtime_refresh(
+                "License installed successfully. DevVault will now restart to load license state."
             )
         except Exception:
             pass
@@ -8625,7 +8710,20 @@ class DevVaultQt(QMainWindow):
             )
             return
 
-        self._business_admin_session = dict(result)
+        session = dict(result)
+
+        # Hydrate missing seat_id from local identity
+        if not str(session.get("seat_id") or "").strip():
+            try:
+                local_identity = get_business_seat_identity()
+                if isinstance(local_identity, dict):
+                    local_seat_id = str(local_identity.get("seat_id") or "").strip()
+                    if local_seat_id:
+                        session["seat_id"] = local_seat_id
+            except Exception:
+                pass
+
+        self._business_admin_session = session
 
         if bool(result.get("password_reset_required")):
             reset_ok = self._business_admin_force_password_reset(
@@ -8644,7 +8742,19 @@ class DevVaultQt(QMainWindow):
                     device_id=device_id,
                     app_version=_safe_app_version(),
                 )
-                self._business_admin_session = dict(refreshed)
+                refreshed_session = dict(refreshed)
+
+                if not str(refreshed_session.get("seat_id") or "").strip():
+                    try:
+                        local_identity = get_business_seat_identity()
+                        if isinstance(local_identity, dict):
+                            local_seat_id = str(local_identity.get("seat_id") or "").strip()
+                            if local_seat_id:
+                                refreshed_session["seat_id"] = local_seat_id
+                    except Exception:
+                        pass
+
+                self._business_admin_session = refreshed_session
             except Exception as e:
                 self._clear_business_admin_session()
                 _centered_message(

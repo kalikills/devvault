@@ -260,6 +260,7 @@ def get_business_seat_identity() -> dict | None:
         "assigned_device_id": str(payload.get("assigned_device_id") or "").strip(),
         "assigned_hostname": str(payload.get("assigned_hostname") or "").strip(),
         "seat_label": str(payload.get("seat_label") or "").strip(),
+        "seat_role": str(payload.get("seat_role") or "").strip(),
         "enrolled_at_utc": str(payload.get("enrolled_at_utc") or "").strip(),
     }
 
@@ -274,6 +275,7 @@ def set_business_seat_identity(
     assigned_device_id: str,
     assigned_hostname: str,
     seat_label: str,
+    seat_role: str = "",
     enrolled_at_utc: str = "",
 ) -> None:
     normalized_seat_id = str(seat_id).strip()
@@ -295,6 +297,7 @@ def set_business_seat_identity(
         "assigned_device_id": str(assigned_device_id).strip(),
         "assigned_hostname": str(assigned_hostname).strip(),
         "seat_label": str(seat_label).strip(),
+        "seat_role": str(seat_role).strip(),
         "enrolled_at_utc": normalized_enrolled_at,
     }
     save_config(cfg)
