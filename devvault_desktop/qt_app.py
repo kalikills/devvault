@@ -5661,81 +5661,43 @@ class DevVaultQt(QMainWindow):
 
     
     def _restart_devvault_app(self) -> None:
-        import os
         import subprocess
         import sys
-        from PySide6.QtCore import QCoreApplication, QProcess, QTimer
-
-        app_path = ""
-        args: list[str] = []
-
-        try:
-            app_path = str(QCoreApplication.applicationFilePath() or "").strip()
-        except Exception:
-            app_path = ""
-
-        try:
-            args = [str(x) for x in QCoreApplication.arguments()[1:]]
-        except Exception:
-            args = []
-
-        if not app_path:
-            app_path = str(sys.executable or "").strip()
-
-        if not app_path:
-            _centered_message(
-                self,
-                "Restart Failed",
-                "DevVault could not determine the application path for automatic restart.",
-            )
-            return
-
-        workdir = ""
-        try:
-            workdir = str(Path(app_path).resolve().parent)
-        except Exception:
-            try:
-                workdir = os.path.dirname(app_path)
-            except Exception:
-                workdir = ""
+        from pathlib import Path
+        from PySide6.QtWidgets import QApplication
 
         started = False
-        last_error = ""
+        last_error = ''
 
         try:
-            started = bool(QProcess.startDetached(app_path, args, workdir or ""))
+            if getattr(sys, 'frozen', False):
+                subprocess.Popen([sys.executable], close_fds=False)
+            else:
+                repo_root = Path(__file__).resolve().parents[1]
+                subprocess.Popen(
+                    [sys.executable, '-m', 'devvault_desktop.qt_app'],
+                    cwd=str(repo_root),
+                    close_fds=False,
+                )
+            started = True
         except Exception as e:
             last_error = str(e)
 
         if not started:
-            try:
-                subprocess.Popen(
-                    [app_path, *args],
-                    cwd=workdir or None,
-                    close_fds=False,
-                )
-                started = True
-            except Exception as e:
-                last_error = str(e)
-
-        if not started:
             _centered_message(
                 self,
-                "Restart Failed",
-                f"DevVault could not restart automatically.\n\n{last_error}",
+                'Restart Failed',
+                f'DevVault could not restart automatically.\n\n{last_error}',
             )
             return
 
         try:
-            QTimer.singleShot(150, QApplication.quit)
+            QApplication.quit()
         except Exception:
             try:
-                QApplication.quit()
+                self.close()
             except Exception:
-                try:
-                    self.close()
-                except Exception:
-                    pass
+                pass
 
     def _force_restart_for_runtime_refresh(self, reason: str) -> None:
         _centered_message(
@@ -5799,15 +5761,10 @@ class DevVaultQt(QMainWindow):
             return
 
         self.append_log("Business NAS vault initialized.")
-        _centered_message(
-            self,
-            "Vault Initialized",
-            "Business NAS vault authority has been successfully initialized.",
+
+        self._force_restart_for_runtime_refresh(
+            "Business NAS vault initialized. DevVault will now restart to load vault authority."
         )
-        try:
-            self._refresh_nas_status()
-        except Exception:
-            pass
 
 
     def _seat_activation_bootstrap(self) -> None:
