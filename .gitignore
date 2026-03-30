@@ -79,3 +79,8 @@ DevVault-Debug.spec
 
 # DevVault lab workspace
 lab/
+_artifacts/
+_build_vm/
+_dist_vm/
+lambda.zip
+pyinstaller.spec

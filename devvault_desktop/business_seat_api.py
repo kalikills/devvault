@@ -188,6 +188,7 @@ def reset_business_admin_password(
     email: str,
     current_password: str,
     new_password: str,
+    token: str,
 ) -> dict[str, Any]:
     email = email.strip().lower()
     current_password = current_password.strip()
@@ -199,15 +200,60 @@ def reset_business_admin_password(
         raise BusinessSeatApiError("current_password is required")
     if not new_password:
         raise BusinessSeatApiError("new_password is required")
+    if not token:
+        raise BusinessSeatApiError("admin session token is required")
 
-    return _post_json(
-        "/api/business/auth/reset-password",
-        {
-            "email": email,
-            "current_password": current_password,
-            "new_password": new_password,
-        },
-    )
+    old_token = os.environ.get("DEVVAULT_BUSINESS_API_BEARER_TOKEN")
+    os.environ["DEVVAULT_BUSINESS_API_BEARER_TOKEN"] = token
+
+    try:
+        return _post_json(
+            "/api/business/auth/reset-password",
+            {
+                "email": email,
+                "current_password": current_password,
+                "new_password": new_password,
+            },
+        )
+    finally:
+        if old_token is None:
+            os.environ.pop("DEVVAULT_BUSINESS_API_BEARER_TOKEN", None)
+        else:
+            os.environ["DEVVAULT_BUSINESS_API_BEARER_TOKEN"] = old_token
+
+def set_business_admin_password(
+    *,
+    email: str,
+    new_password: str,
+    token: str,
+) -> dict[str, Any]:
+    email = email.strip().lower()
+    new_password = new_password.strip()
+
+    if not email:
+        raise BusinessSeatApiError("email is required")
+    if not new_password:
+        raise BusinessSeatApiError("new_password is required")
+    if not token:
+        raise BusinessSeatApiError("admin session token is required")
+
+    old_token = os.environ.get("DEVVAULT_BUSINESS_API_BEARER_TOKEN")
+    os.environ["DEVVAULT_BUSINESS_API_BEARER_TOKEN"] = token
+
+    try:
+        return _post_json(
+            "/api/business/auth/reset-password",
+            {
+                "email": email,
+                "new_password": new_password,
+            },
+        )
+    finally:
+        if old_token is None:
+            os.environ.pop("DEVVAULT_BUSINESS_API_BEARER_TOKEN", None)
+        else:
+            os.environ["DEVVAULT_BUSINESS_API_BEARER_TOKEN"] = old_token
+
 
 
 

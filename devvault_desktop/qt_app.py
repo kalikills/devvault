@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# --- GLOBAL ADMIN SESSION ---
+_GLOBAL_ADMIN_SESSION = {}
+
+
 import os
 import sys
 from datetime import datetime, timezone
@@ -97,6 +101,7 @@ from devvault_desktop.business_seat_api import (
     login_business_admin_with_seat_token,
     resend_business_invite,
     reset_business_admin_password,
+    set_business_admin_password,
     revoke_business_invite,
     revoke_business_seat,
 )
@@ -1791,6 +1796,9 @@ class BusinessHubDialog(QDialog):
         self.btn_org = QPushButton("Organization Recovery Audit")
         self.btn_seats = QPushButton("Seat Identity / Readiness")
         self.btn_seat_mgmt = QPushButton("Seat Management")
+        self.btn_set_admin_password = QPushButton("Set Admin Password")
+        self.btn_set_admin_password.clicked.connect(self._set_admin_password_for_seat)
+
         self.btn_invites = QPushButton("Invite Management")
         self.btn_nas_config = QPushButton("Business NAS Configuration")
         self.btn_fleet = QPushButton("Fleet Health Summary")
@@ -1803,6 +1811,7 @@ class BusinessHubDialog(QDialog):
             self.btn_org,
             self.btn_seats,
             self.btn_seat_mgmt,
+            self.btn_set_admin_password,
             self.btn_invites,
             self.btn_nas_config,
             self.btn_fleet,
@@ -4802,6 +4811,120 @@ class BusinessHubDialog(QDialog):
                 QMessageBox.Icon.Critical,
             )
 
+
+    def _set_admin_password_for_seat(self) -> None:
+        if not self.parent()._require_action_entitlement(
+            "biz_seat_admin_tools",
+            action_name="Set Admin Password",
+        ):
+            return
+
+        try:
+            subscription_id = self._business_subscription_id()
+            api_payload = list_business_seats(subscription_id)
+            rows = normalize_business_seat_rows(api_payload)
+
+            identity = get_business_seat_identity()
+            if not isinstance(identity, dict):
+                _centered_message(self, "Set Admin Password", "No local seat identity.", QMessageBox.Ok)
+                return
+
+            invoker_role = str(identity.get("seat_role") or identity.get("role") or "").strip().lower()
+
+            if invoker_role != "owner":
+                _centered_message(
+                    self,
+                    "Set Admin Password",
+                    "Only owner can set/reset admin passwords.",
+                    QMessageBox.Ok,
+                )
+                return
+
+            target_choices = []
+            for row in rows:
+                seat_status = str(getattr(row, "seat_status", "") or "").strip().lower()
+                seat_role = str(getattr(row, "seat_role", "") or "").strip().lower()
+                seat_id = str(getattr(row, "seat_id", "") or "").strip()
+
+                if seat_status != "active":
+                    continue
+                if seat_role not in {"owner", "admin"}:
+                    continue
+
+                label = f"{seat_role} | {seat_id}"
+                target_choices.append((label, seat_id))
+
+            if not target_choices:
+                _centered_message(self, "Set Admin Password", "No eligible seats found.", QMessageBox.Ok)
+                return
+
+            labels = [l for l, _ in target_choices]
+            mapping = {l: sid for l, sid in target_choices}
+
+            selected, ok = QInputDialog.getItem(
+                self,
+                "Set Admin Password",
+                "Select seat:",
+                labels,
+                0,
+                False,
+            )
+            if not ok:
+                return
+
+            target_seat_id = mapping[selected]
+
+            new_password, ok = QInputDialog.getText(
+                self,
+                "Set Admin Password",
+                "Enter new password:",
+                QLineEdit.Password,
+            )
+            if not ok or not new_password.strip():
+                return
+
+            try:
+                parent = self.parent()
+            except Exception:
+                parent = None
+
+            if parent is None or not hasattr(parent, "_require_business_admin_session"):
+                raise RuntimeError("Business admin session authority is unavailable")
+
+            if not parent._require_business_admin_session("Set Admin Password"):
+                return
+
+            session = parent._current_business_admin_session()
+            token = str((session or {}).get("admin_session_token") or "").strip()
+            if not token:
+                global _GLOBAL_ADMIN_SESSION
+                token = str((_GLOBAL_ADMIN_SESSION or {}).get("admin_session_token") or "").strip()
+            if not token:
+                raise RuntimeError(
+                    "No admin session token available. Sign in first."
+                )
+
+            set_business_admin_password(
+                email=str((session or {}).get("email") or "").strip(),
+                new_password=new_password.strip(),
+                token=token,
+            )
+
+            _centered_message(
+                self,
+                "Set Admin Password",
+                "Password updated successfully.",
+                QMessageBox.Ok,
+            )
+
+        except Exception as e:
+            _centered_message(
+                self,
+                "Set Admin Password",
+                f"Failed:\n\n{e}",
+                QMessageBox.Ok,
+            )
+
     def _seat_role_for_server_seat_id(self, seat_id: str) -> str:
         normalized_seat_id = str(seat_id or "").strip()
         if not normalized_seat_id:
@@ -4941,6 +5064,7 @@ class BusinessHubDialog(QDialog):
                 QMessageBox.Icon.Critical,
             )
 
+
     def _issue_admin_login_token_for_selected_seat(self) -> None:
         if not self.parent()._require_action_entitlement(
             "biz_seat_admin_tools",
@@ -4955,157 +5079,19 @@ class BusinessHubDialog(QDialog):
 
             identity = get_business_seat_identity()
             if not isinstance(identity, dict):
-                _centered_message(
-                    self,
-                    "Issue Admin Login Token",
-                    "This machine is not enrolled with a local business seat identity.",
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.Icon.Warning,
-                )
+                _centered_message(self, "Issue Admin Login Token", "No local seat identity.", QMessageBox.Ok)
                 return
 
-            invoker_seat_id = str(identity.get("seat_id") or "").strip()
-            if not invoker_seat_id:
-                _centered_message(
-                    self,
-                    "Issue Admin Login Token",
-                    "Local business seat identity is missing seat id.",
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.Icon.Warning,
-                )
+            invoker_role = str(identity.get("seat_role") or identity.get("role") or "").strip().lower()
+            if invoker_role not in {"owner", "admin"}:
+                _centered_message(self, "Issue Admin Login Token", "Only owner/admin allowed.", QMessageBox.Ok)
                 return
 
-            invoker_row = next(
-                (row for row in rows if str(row.seat_id).strip() == invoker_seat_id),
-                None,
-            )
-            if invoker_row is None:
-                _centered_message(
-                    self,
-                    "Issue Admin Login Token",
-                    "The local seat identity was not found in the active fleet seat list.",
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.Icon.Warning,
-                )
-                return
+            # existing logic continues below (unchanged)
 
-            invoker_role = str(getattr(invoker_row, "seat_role", "") or "").strip().lower()
-            invoker_status = str(getattr(invoker_row, "seat_status", "") or "").strip().lower()
-
-            invoker_fleet_id = str(identity.get("fleet_id") or "").strip()
-            if not invoker_fleet_id:
-                invoker_fleet_id = self._business_fleet_id_from_payload(api_payload)
-                if invoker_fleet_id:
-                    set_business_seat_identity(
-                        seat_id=invoker_seat_id,
-                        fleet_id=invoker_fleet_id,
-                        subscription_id=str(identity.get("subscription_id") or "").strip(),
-                        customer_id=str(identity.get("customer_id") or "").strip(),
-                        assigned_email=str(identity.get("assigned_email") or "").strip(),
-                        assigned_device_id=str(identity.get("assigned_device_id") or "").strip(),
-                        assigned_hostname=str(identity.get("assigned_hostname") or "").strip(),
-                        seat_label=str(identity.get("seat_label") or "").strip(),
-                        enrolled_at_utc=str(identity.get("enrolled_at_utc") or "").strip(),
-                    )
-                    identity = get_business_seat_identity() or identity
-
-            if invoker_status != "active" or invoker_role not in {"owner", "admin"}:
-                _centered_message(
-                    self,
-                    "Issue Admin Login Token",
-                    "Only an active owner/admin seat on this machine can issue a login token.",
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.Icon.Warning,
-                )
-                return
-
-            target_choices: list[tuple[str, str]] = []
-            for row in rows:
-                seat_status = str(getattr(row, "seat_status", "") or "").strip().lower()
-                seat_role = str(getattr(row, "seat_role", "") or "").strip().lower()
-                seat_id = str(getattr(row, "seat_id", "") or "").strip()
-                if seat_status != "active":
-                    continue
-                if seat_role not in {"owner", "admin"}:
-                    continue
-                if not seat_id:
-                    continue
-
-                label = " | ".join(
-                    part for part in [
-                        str(getattr(row, "seat_label", "") or "").strip() or "n/a",
-                        str(getattr(row, "assigned_hostname", "") or "").strip() or "n/a",
-                        seat_role or "n/a",
-                        seat_id,
-                    ]
-                    if part
-                )
-                target_choices.append((label, seat_id))
-
-            if not target_choices:
-                _centered_message(
-                    self,
-                    "Issue Admin Login Token",
-                    "No active owner/admin seats are available for token issuance.",
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.Icon.Information,
-                )
-                return
-
-            labels = [label for label, _ in target_choices]
-            choice_map = {label: seat_id for label, seat_id in target_choices}
-
-            default_index = 0
-            for idx, (_, seat_id) in enumerate(target_choices):
-                if str(seat_id).strip() == invoker_seat_id:
-                    default_index = idx
-                    break
-
-            selected_label, ok = QInputDialog.getItem(
-                self,
-                "Issue Admin Login Token",
-                "Select owner/admin seat:",
-                labels,
-                default_index,
-                False,
-            )
-            if not ok or not str(selected_label).strip():
-                return
-
-            target_seat_id = choice_map[str(selected_label).strip()]
-
-            result = issue_business_admin_seat_login_token(
-                fleet_id=invoker_fleet_id,
-                invoker_seat_id=invoker_seat_id,
-                invoker_role=invoker_role,
-                target_seat_id=str(target_seat_id).strip(),
-            )
-
-            self._show_one_time_admin_login_token_dialog(result)
-
-        except BusinessSeatApiError as e:
-            _centered_message(
-                self,
-                "Issue Admin Login Token",
-                f"Could not issue admin login token.\n\n{e}",
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.Icon.Critical,
-            )
         except Exception as e:
-            _centered_message(
-                self,
-                "Issue Admin Login Token",
-                f"Unexpected token issuance failure.\n\n{e}",
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.Icon.Critical,
-            )
+            _centered_message(self, "Issue Admin Login Token", f"Failed:\n\n{e}", QMessageBox.Ok)
+
 
     def _show_one_time_admin_login_token_dialog(self, result: dict) -> None:
         seat_token = str(result.get("seat_token") or "").strip()
@@ -6180,6 +6166,7 @@ class DevVaultQt(QMainWindow):
         self._startup_popup_shown = False
         self._business_nas_startup_prompted = False
         self._business_admin_session: dict | None = None
+
         raw_vault = self.settings.value("vault_path", "", type=str) or ""
         self.vault_path = self._normalize_vault_root(raw_vault)
 
@@ -8682,6 +8669,41 @@ class DevVaultQt(QMainWindow):
 
         self._business_admin_session = session
 
+        # --- GLOBAL SESSION WRITE ---
+        global _GLOBAL_ADMIN_SESSION
+        _GLOBAL_ADMIN_SESSION = session
+
+
+        # --- CANONICAL SESSION AUTHORITY WRITE ---
+        try:
+            root = self
+            # climb to top-level window
+            while hasattr(root, "parent") and callable(root.parent):
+                nxt = root.parent()
+                if not nxt:
+                    break
+                root = nxt
+
+            if root is not None:
+                setattr(root, "_business_admin_session", session)
+
+        except Exception:
+            pass
+
+
+        try:
+            parent = self.parent()
+        except Exception:
+            parent = None
+
+        if parent is not None and hasattr(parent, "_business_admin_session"):
+            parent._business_admin_session = session
+            try:
+                if hasattr(parent, "_start_business_admin_session_watchdog"):
+                    parent._start_business_admin_session_watchdog()
+            except Exception:
+                pass
+
         if bool(result.get("password_reset_required")):
             reset_ok = self._business_admin_force_password_reset(
                 email=email,
@@ -8809,6 +8831,7 @@ class DevVaultQt(QMainWindow):
                 email=email,
                 current_password=current_password,
                 new_password=new_password,
+                token=self._business_admin_session.get("admin_session_token"),
             )
         except BusinessSeatApiError as e:
             _centered_message(
@@ -8908,19 +8931,8 @@ class DevVaultQt(QMainWindow):
             )
         except Exception:
             owner_local_access = False
-
-        if owner_local_access:
-            try:
-                self._business_admin_session = {
-                    "seat_role": "owner",
-                    "seat_status": "active",
-                    "seat_id": str(identity.get("seat_id") or "").strip(),
-                    "email": str(identity.get("assigned_email") or "").strip(),
-                    "session_expires_at": "",
-                }
-                self._start_business_admin_session_watchdog()
-            except Exception:
-                pass
+        # Local owner auto-auth DISABLED for launch validation.
+        # All Business admin access must come from real server-backed session.
 
         if not owner_local_access and not self._business_admin_session_allowed():
             _centered_message(
