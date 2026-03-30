@@ -100,7 +100,6 @@ from devvault_desktop.business_seat_api import (
     login_business_admin_with_password,
     login_business_admin_with_seat_token,
     resend_business_invite,
-    reset_business_admin_password,
     set_business_admin_password,
     revoke_business_invite,
     revoke_business_seat,
@@ -8827,11 +8826,11 @@ class DevVaultQt(QMainWindow):
             return False
 
         try:
-            reset_business_admin_password(
+            set_business_admin_password(
                 email=email,
-                current_password=current_password,
                 new_password=new_password,
                 token=self._business_admin_session.get("admin_session_token"),
+                current_password=current_password,
             )
         except BusinessSeatApiError as e:
             _centered_message(
