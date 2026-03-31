@@ -511,7 +511,7 @@ def run_backup_execute_with_drive_watch(
             }
 
         if _should_validate_business_nas(vlt):
-            authority = validate_business_vault_authority(vlt)
+            authority = validate_business_vault_authority(vlt, mode="backup")
             if not authority.ok:
                 return {
                     "ok": False,

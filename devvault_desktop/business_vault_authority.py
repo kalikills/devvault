@@ -23,7 +23,7 @@ class VaultAuthorityValidationResult:
     operator_message: str
 
 
-def validate_business_vault_authority(nas_root: Path) -> VaultAuthorityValidationResult:
+def validate_business_vault_authority(nas_root: Path, mode: str = "restore") -> VaultAuthorityValidationResult:
     try:
         if not nas_root.exists():
             return VaultAuthorityValidationResult(
@@ -58,7 +58,9 @@ def validate_business_vault_authority(nas_root: Path) -> VaultAuthorityValidatio
             "Business NAS vault structure is invalid.",
         )
 
-    if not index_file.exists():
+    require_index = str(mode or "restore").strip().lower() != "backup"
+
+    if require_index and not index_file.exists():
         return VaultAuthorityValidationResult(
             False,
             VaultAuthorityState.PARTIAL_INIT,

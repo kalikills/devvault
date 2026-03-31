@@ -2710,7 +2710,7 @@ class BusinessHubDialog(QDialog):
             "Result: SAVED",
             "Business NAS target updated successfully.",
         ])
-        self._force_restart_for_runtime_refresh(
+        self.parent()._force_restart_for_runtime_refresh(
             "Business NAS target updated successfully. DevVault will now restart to refresh vault authority and runtime state."
         )
 
@@ -8101,7 +8101,7 @@ class DevVaultQt(QMainWindow):
         if not nas_path:
             return
 
-        authority = validate_business_vault_authority(Path(nas_path))
+        authority = validate_business_vault_authority(Path(nas_path), mode="backup")
         if not authority.ok:
             raise NASNotConfiguredError(
                 f"{authority.operator_message}\n\nAuthority state: {authority.state.value}"
@@ -10161,7 +10161,7 @@ class DevVaultQt(QMainWindow):
             from scanner.snapshot_listing import snapshot_storage_root
             from devvault_desktop.business_vault_authority import validate_business_vault_authority
 
-            authority = validate_business_vault_authority(vault_dir)
+            authority = validate_business_vault_authority(vault_dir, mode="backup")
             if not authority.ok:
                 _centered_message(self, "Restore Refused", authority.operator_message)
                 self.append_log(f"Restore refused: {authority.state.value}: {authority.operator_message}")

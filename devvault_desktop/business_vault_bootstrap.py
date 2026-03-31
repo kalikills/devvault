@@ -28,15 +28,21 @@ def bootstrap_business_vault(nas_root: Path) -> None:
     dv = nas_root / ".devvault"
 
     if dv.exists():
-        raise BusinessVaultBootstrapError(
-            ".devvault already exists - strict bootstrap refusal (repair required)."
-        )
+        shared_key = dv / "manifest_hmac_key.shared"
+        snapshots_dir = dv / "snapshots"
 
-    dv.mkdir(parents=True, exist_ok=False)
+        fully_initialized = shared_key.exists() and snapshots_dir.exists()
 
-    (dv / "snapshots").mkdir()
-    (dv / "index").mkdir()
-    (dv / "metadata").mkdir()
+        if fully_initialized:
+            raise BusinessVaultBootstrapError(
+                ".devvault already exists - strict bootstrap refusal (repair required)."
+            )
+    else:
+        dv.mkdir(parents=True, exist_ok=False)
+
+    (dv / "snapshots").mkdir(exist_ok=True)
+    (dv / "index").mkdir(exist_ok=True)
+    (dv / "metadata").mkdir(exist_ok=True)
 
     init_file = dv / "vault_init.json"
 
