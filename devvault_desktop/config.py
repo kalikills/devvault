@@ -211,58 +211,46 @@ def set_vault_dir(vault_dir: str) -> None:
 
 
 def get_business_nas_path() -> str:
-    cfg = load_config()
-    raw = cfg.get("business_nas_path", "")
-    if isinstance(raw, str) and raw.strip():
-        return raw
-
-    legacy = cfg.get("nas_vault_path", "")
-    if isinstance(legacy, str) and legacy.strip():
-        return legacy
-
-    return ""
+    data = load_runtime() or {}
+    storage = data.get("storage") or {}
+    path = storage.get("nas_path") or ""
+    return path if isinstance(path, str) else ""
 
 
 def set_business_nas_path(nas_path: str) -> None:
     normalized = str(Path(nas_path).expanduser())
-    cfg = load_config()
-    cfg["business_nas_path"] = normalized
-    cfg["nas_vault_path"] = normalized
-    save_config(cfg)
+    data = load_runtime() or {}
+    storage = data.get("storage") or {}
+    storage["nas_path"] = normalized
+    data["storage"] = storage
+    save_runtime(data)
 
 
 def clear_business_nas_path() -> None:
-    cfg = load_config()
-    if "business_nas_path" in cfg:
-        del cfg["business_nas_path"]
-    if "nas_vault_path" in cfg:
-        del cfg["nas_vault_path"]
-    save_config(cfg)
+    data = load_runtime() or {}
+    storage = data.get("storage") or {}
+    if "nas_path" in storage:
+        del storage["nas_path"]
+    data["storage"] = storage
+    save_runtime(data)
+
+
+from devvault_desktop.business_runtime_config import load_runtime, save_runtime
 
 
 def get_business_seat_identity() -> dict | None:
-    cfg = load_config()
-    payload = cfg.get("business_seat_identity")
-    if not isinstance(payload, dict):
+    data = load_runtime()
+    if not data:
         return None
 
-    seat_id = str(payload.get("seat_id") or "").strip()
-    if not seat_id:
+    seat = data.get("seat") or {}
+    if not isinstance(seat, dict):
         return None
 
-    return {
-        "schema_version": int(payload.get("schema_version") or 1),
-        "seat_id": seat_id,
-        "fleet_id": str(payload.get("fleet_id") or "").strip(),
-        "subscription_id": str(payload.get("subscription_id") or "").strip(),
-        "customer_id": str(payload.get("customer_id") or "").strip(),
-        "assigned_email": str(payload.get("assigned_email") or "").strip(),
-        "assigned_device_id": str(payload.get("assigned_device_id") or "").strip(),
-        "assigned_hostname": str(payload.get("assigned_hostname") or "").strip(),
-        "seat_label": str(payload.get("seat_label") or "").strip(),
-        "seat_role": str(payload.get("seat_role") or "").strip(),
-        "enrolled_at_utc": str(payload.get("enrolled_at_utc") or "").strip(),
-    }
+    if not str(seat.get("seat_id") or "").strip():
+        return None
+
+    return seat
 
 
 def set_business_seat_identity(
@@ -286,8 +274,8 @@ def set_business_seat_identity(
     if not normalized_enrolled_at:
         normalized_enrolled_at = datetime.now(timezone.utc).isoformat()
 
-    cfg = load_config()
-    cfg["business_seat_identity"] = {
+    data = load_runtime() or {}
+    data["seat"] = {
         "schema_version": 1,
         "seat_id": normalized_seat_id,
         "fleet_id": str(fleet_id).strip(),
@@ -300,13 +288,17 @@ def set_business_seat_identity(
         "seat_role": str(seat_role).strip(),
         "enrolled_at_utc": normalized_enrolled_at,
     }
-    save_config(cfg)
+    if not str(data.get("mode") or "").strip():
+        data["mode"] = "active"
+    save_runtime(data)
 
 
 def clear_business_seat_identity() -> None:
-    cfg = load_config()
-    if "business_seat_identity" in cfg:
-        del cfg["business_seat_identity"]
-    save_config(cfg)
+    data = load_runtime() or {}
+    if "seat" in data:
+        del data["seat"]
+    if not str(data.get("mode") or "").strip():
+        data["mode"] = "setup"
+    save_runtime(data)
 
 

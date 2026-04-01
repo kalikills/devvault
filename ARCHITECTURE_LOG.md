@@ -1205,3 +1205,10 @@ Result
 Backup engine now stable and production-safe.
 No thread deadlocks, UI freezes, or orphaned threads observed during live testing.
 
+
+## 2026-04-01 — Setup finalization / owner bootstrap / test-shortcut checkpoint
+
+- Setup completion now acts as validator/finalizer only and no longer performs NAS bootstrap or seat-prompt side effects
+- Owner password reset path now performs no-token owner auto-enroll and persists local seat identity before setup can finish
+- Runtime active state is finalized at setup completion and the app restarts into normal mode
+- Hidden dev-only `Ctrl+Shift+R` setup re-entry shortcut added for repeatable onboarding tests

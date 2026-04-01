@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from devvault_desktop.business_runtime_config import get_business_api_base_url
+from devvault_desktop.business_runtime_config import get_business_api_base_url, load_runtime
 
 
 APP_NAME = "DevVault"
@@ -30,10 +30,6 @@ def _machine_data_dir() -> Path:
     p = Path(r"C:\ProgramData") / APP_NAME
     p.mkdir(parents=True, exist_ok=True)
     return p
-
-
-def _config_path() -> Path:
-    return _machine_data_dir() / "config.json"
 
 
 def _state_path() -> Path:
@@ -144,8 +140,8 @@ class BusinessServiceWorker:
         interval_seconds: int,
         backup_cmd: str | None,
     ) -> "BusinessServiceWorker":
-        cfg = load_json_file(_config_path())
-        identity = cfg.get("business_seat_identity") or {}
+        runtime = load_runtime() or {}
+        identity = runtime.get("seat") or {}
 
         seat_id = str(identity.get("seat_id") or "").strip()
         fleet_id = str(identity.get("fleet_id") or "").strip()
@@ -154,11 +150,11 @@ class BusinessServiceWorker:
 
         if not seat_id:
             raise RuntimeError(
-                "No local Business seat identity found in %APPDATA%\\DevVault\\config.json"
+                "No local Business seat identity found in ProgramData runtime config."
             )
         if not fleet_id or not subscription_id or not customer_id:
             raise RuntimeError(
-                "Incomplete Business seat identity in %APPDATA%\\DevVault\\config.json"
+                "Incomplete Business seat identity in ProgramData runtime config."
             )
 
         assigned_device_id = str(identity.get("assigned_device_id") or "").strip() or None

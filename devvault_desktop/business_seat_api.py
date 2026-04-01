@@ -548,14 +548,12 @@ def enroll_business_seat(
 ) -> dict[str, Any]:
     subscription_id = subscription_id.strip()
     customer_id = customer_id.strip()
-    invite_token = invite_token.strip()
+    invite_token = (invite_token or "").strip()
 
     if not subscription_id:
         raise BusinessSeatApiError("subscription_id is required")
     if not customer_id:
         raise BusinessSeatApiError("customer_id is required")
-    if not invite_token:
-        raise BusinessSeatApiError("invite_token is required")
 
     payload = {
         "subscription_id": subscription_id,
@@ -568,11 +566,11 @@ def enroll_business_seat(
         "invite_token": invite_token,
         "candidate_seat_id": candidate_seat_id.strip(),
         "display_name": display_name.strip(),
-                "hostname": hostname.strip(),
-                "app_version": app_version.strip(),
-                "installed_license": installed_license or {},
-                "vault_evidence": vault_evidence or {},
-        "fingerprint_hash": fingerprint_hash.strip(),   
+        "hostname": hostname.strip(),
+        "app_version": app_version.strip(),
+        "installed_license": installed_license or {},
+        "vault_evidence": vault_evidence or {},
+        "fingerprint_hash": fingerprint_hash.strip(),
     }
     return _post_json("/api/business/seats/enroll", payload)
 

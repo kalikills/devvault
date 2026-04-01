@@ -5,11 +5,13 @@ _GLOBAL_ADMIN_SESSION = {}
 
 
 import os
+import json
 import sys
 from datetime import datetime, timezone
 import subprocess
 import uuid
 from pathlib import Path
+from devvault_desktop.business_runtime_config import get_mode, is_active, load_runtime
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QFileDialog
 
@@ -2751,7 +2753,7 @@ class BusinessHubDialog(QDialog):
             "Result: SAVED",
             "Business NAS target updated successfully.",
         ])
-        self._force_restart_for_runtime_refresh(
+        self.parent()._force_restart_for_runtime_refresh(
             "Business NAS target updated successfully. DevVault will now restart to refresh vault authority and runtime state."
         )
 
@@ -4898,16 +4900,50 @@ class BusinessHubDialog(QDialog):
             if not token:
                 global _GLOBAL_ADMIN_SESSION
                 token = str((_GLOBAL_ADMIN_SESSION or {}).get("admin_session_token") or "").strip()
-            if not token:
-                raise RuntimeError(
-                    "No admin session token available. Sign in first."
-                )
+            email = str((session or {}).get("email") or "").strip()
 
-            set_business_admin_password(
-                email=str((session or {}).get("email") or "").strip(),
-                new_password=new_password.strip(),
-                token=token,
-            )
+            if not token:
+                local_role = ""
+                local_email = ""
+                try:
+                    identity = get_business_seat_identity()
+                except Exception:
+                    identity = {}
+
+                if isinstance(identity, dict):
+                    local_role = str(
+                        identity.get("seat_role")
+                        or identity.get("role")
+                        or ""
+                    ).strip().lower()
+                    local_email = str(
+                        identity.get("assigned_email")
+                        or identity.get("email")
+                        or ""
+                    ).strip()
+
+                if local_role != "owner":
+                    raise RuntimeError(
+                        "No admin session token available. Sign in first."
+                    )
+
+                if not email:
+                    email = local_email
+
+                if not email:
+                    raise RuntimeError(
+                        "Owner bootstrap failed: no owner email available."
+                    )
+
+                raise RuntimeError(
+                    "No admin session token available for owner password reset. Sign in through the active business session first."
+                )
+            else:
+                set_business_admin_password(
+                    email=email,
+                    new_password=new_password.strip(),
+                    token=token,
+                )
 
             _centered_message(
                 self,
@@ -5646,43 +5682,30 @@ class DevVaultQt(QMainWindow):
 
     
     def _restart_devvault_app(self) -> None:
-        import subprocess
+        import os
         import sys
         from pathlib import Path
         from PySide6.QtWidgets import QApplication
 
-        started = False
-        last_error = ''
-
         try:
-            if getattr(sys, 'frozen', False):
-                subprocess.Popen([sys.executable], close_fds=False)
+            if getattr(sys, "frozen", False):
+                relaunch = [sys.executable]
+                exec_path = sys.executable
             else:
                 repo_root = Path(__file__).resolve().parents[1]
-                subprocess.Popen(
-                    [sys.executable, '-m', 'devvault_desktop.qt_app'],
-                    cwd=str(repo_root),
-                    close_fds=False,
-                )
-            started = True
-        except Exception as e:
-            last_error = str(e)
+                os.chdir(str(repo_root))
+                relaunch = [sys.executable, "-m", "devvault_desktop.qt_app"]
+                exec_path = sys.executable
 
-        if not started:
+            QApplication.quit()
+            os.execv(exec_path, relaunch)
+
+        except Exception as e:
             _centered_message(
                 self,
-                'Restart Failed',
-                f'DevVault could not restart automatically.\n\n{last_error}',
+                "Restart Failed",
+                f"DevVault could not restart automatically.\n\n{e}",
             )
-            return
-
-        try:
-            QApplication.quit()
-        except Exception:
-            try:
-                self.close()
-            except Exception:
-                pass
 
     def _force_restart_for_runtime_refresh(self, reason: str) -> None:
         _centered_message(
@@ -5779,6 +5802,21 @@ class DevVaultQt(QMainWindow):
                 identity = get_business_seat_identity()
             except Exception:
                 identity = None
+
+            # ✅ OWNER BYPASS (Phase 3)
+            try:
+                if isinstance(identity, dict):
+                    role = str(
+                        identity.get("seat_role")
+                        or identity.get("role")
+                        or ""
+                    ).strip().lower()
+
+                    if role == "owner":
+                        self.open_business_tools()
+                        return
+            except Exception:
+                pass
 
             if not isinstance(identity, dict) or not str(identity.get("seat_id") or "").strip():
                 try:
@@ -6159,6 +6197,11 @@ class DevVaultQt(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+
+        mode = get_mode()
+        if mode != "active":
+            print("[DevVault] Setup mode detected — entering setup UI")
+            self._force_setup_mode = True
         self.settings = QSettings("TSW", "DevVault")
         self._startup_popup = None
         self._last_scan_payload: dict | None = None
@@ -6239,6 +6282,15 @@ class DevVaultQt(QMainWindow):
         root = QWidget()
         root.setObjectName("root")
         self.setCentralWidget(root)
+
+        self._setup_overlay = None
+        self._setup_card = None
+        self._setup_mode = "core_pro"
+        self._setup_mode_buttons = {}
+        self._setup_business_owner_fields = None
+        self._setup_business_seat_fields = None
+        self._setup_nas_fields = None
+        self._create_setup_panel(root)
 
         # Operation overlay (Loading / Operation page). Wiring happens later.
         try:
@@ -6610,9 +6662,20 @@ class DevVaultQt(QMainWindow):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._position_watermark()
+        self._position_setup_panel()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+
+        try:
+            self._ensure_hidden_setup_shortcut()
+        except Exception:
+            pass
+
+        self._sync_setup_panel_state()
+
+        if self._setup_required():
+            return
 
         if not getattr(self, "_business_nas_startup_prompted", False):
             self._business_nas_startup_prompted = True
@@ -6650,6 +6713,1042 @@ class DevVaultQt(QMainWindow):
             )
         except Exception:
             pass
+
+    def _setup_license_context(self) -> tuple[str, str]:
+        try:
+            st = check_license()
+            state = str(getattr(st, "state", "") or "").strip().upper()
+            plan = str(
+                getattr(st, "plan", None)
+                or getattr(st, "tier", None)
+                or getattr(st, "kind", None)
+                or ""
+            ).strip().lower()
+            return state, plan
+        except Exception:
+            return "", ""
+
+    def _setup_required(self) -> bool:
+        if bool(getattr(self, "_force_setup_mode", False)):
+            return True
+
+        state, plan = self._setup_license_context()
+
+        if state == "UNLICENSED":
+            return True
+
+        if plan == "business":
+            try:
+                runtime_path = Path(os.environ.get("ProgramData", "")) / "DevVault" / "business_runtime.json"
+                if runtime_path.exists():
+                    data = json.loads(runtime_path.read_text(encoding="utf-8")) or {}
+
+                    mode = str(data.get("mode") or "").strip().lower()
+                    storage = data.get("storage") or {}
+                    nas = str(storage.get("nas_path") or "").strip()
+
+                    if mode == "active" and nas:
+                        return False
+            except Exception:
+                pass
+
+            return True
+
+        return False
+
+    def _ensure_hidden_setup_shortcut(self) -> None:
+        try:
+            if bool(getattr(self, "_hidden_setup_shortcut_ready", False)):
+                return
+
+            from PySide6.QtGui import QShortcut, QKeySequence
+
+            sc = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
+            sc.setContext(Qt.ApplicationShortcut)
+
+            def _reenter_setup() -> None:
+                try:
+                    self._force_setup_mode = True
+                except Exception:
+                    pass
+
+                try:
+                    overlay = getattr(self, "setup_overlay", None)
+                    if overlay is not None:
+                        overlay.show()
+                except Exception:
+                    pass
+
+                try:
+                    self._sync_setup_panel_state()
+                except Exception:
+                    pass
+
+                try:
+                    self._position_setup_panel()
+                except Exception:
+                    pass
+
+                try:
+                    _centered_message(
+                        self,
+                        "Setup Mode",
+                        "Setup mode opened for testing."
+                    )
+                except Exception:
+                    pass
+
+            sc.activated.connect(_reenter_setup)
+            self._hidden_setup_shortcut = sc
+            self._hidden_setup_shortcut_ready = True
+
+        except Exception as e:
+            try:
+                self.append_log(f"Hidden setup shortcut init failed: {e}")
+            except Exception:
+                pass
+
+    def _create_setup_panel(self, parent: QWidget) -> None:
+        overlay = QWidget(parent)
+        overlay.setObjectName("setup_overlay")
+        overlay.hide()
+        overlay.setStyleSheet(
+            """
+            QWidget#setup_overlay {
+                background: rgba(0, 0, 0, 190);
+            }
+            QWidget#setup_card {
+                background: rgba(12, 12, 12, 235);
+                border: 1px solid rgba(230, 194, 0, 120);
+                border-radius: 16px;
+            }
+            QLabel#setup_title {
+                color: #f5c400;
+                font-size: 24px;
+                font-weight: 700;
+            }
+            QLabel#setup_subtitle {
+                color: rgba(235, 235, 235, 185);
+                font-size: 12px;
+            }
+            QLabel#setup_section_title {
+                color: #f5c400;
+                font-size: 13px;
+                font-weight: 700;
+            }
+            QPushButton#setup_mode_button {
+                min-width: 150px;
+                padding: 10px 12px;
+                border: 1px solid rgba(120,120,120,140);
+                border-radius: 10px;
+                background: rgba(255,255,255,0.03);
+                color: #e6c200;
+            }
+            QPushButton#setup_mode_button:checked {
+                border: 1px solid #f5c400;
+                background: rgba(245, 196, 0, 0.14);
+            }
+            QLineEdit {
+                color: #f5c400;
+                background: rgba(0,0,0,110);
+                border: 1px solid rgba(120,120,120,140);
+                padding: 10px 12px;
+            }
+            QPushButton#setup_primary_button {
+                min-height: 42px;
+                border: 1px solid #f5c400;
+                border-radius: 10px;
+                background: rgba(245, 196, 0, 0.12);
+                color: #f5c400;
+                font-weight: 700;
+            }
+            QPushButton#setup_secondary_button {
+                min-height: 38px;
+                border: 1px solid rgba(120,120,120,140);
+                border-radius: 10px;
+                background: rgba(255,255,255,0.03);
+                color: #e6c200;
+            }
+            """
+        )
+
+        card = QFrame(overlay)
+        card.setObjectName("setup_card")
+        card.setFixedWidth(760)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(14)
+
+        title = QLabel("DevVault Setup", card)
+        title.setObjectName("setup_title")
+        title.setAlignment(Qt.AlignHCenter)
+        layout.addWidget(title)
+
+        subtitle = QLabel(
+            "Complete initial configuration in one place to continue.",
+            card,
+        )
+        subtitle.setObjectName("setup_subtitle")
+        subtitle.setAlignment(Qt.AlignHCenter)
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle)
+
+        license_title = QLabel("License", card)
+        license_title.setObjectName("setup_section_title")
+        layout.addWidget(license_title)
+
+        license_row = QHBoxLayout()
+        self.txt_setup_license = QLineEdit(card)
+        self.txt_setup_license.setReadOnly(True)
+        self.txt_setup_license.setPlaceholderText("Import your DevVault license (.dvlic)")
+        self.txt_setup_license.setText("No license installed")
+        license_row.addWidget(self.txt_setup_license, 1)
+
+        self.btn_setup_install_license = QPushButton("Import License", card)
+        self.btn_setup_install_license.setObjectName("setup_secondary_button")
+        self.btn_setup_install_license.clicked.connect(self.install_license)
+        license_row.addWidget(self.btn_setup_install_license)
+        layout.addLayout(license_row)
+
+        mode_title = QLabel("Setup Mode", card)
+        mode_title.setObjectName("setup_section_title")
+        layout.addWidget(mode_title)
+
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(10)
+        self.btn_setup_mode_core = QPushButton("Core / Pro", card)
+        self.btn_setup_mode_owner = QPushButton("Business Owner", card)
+
+        self._setup_mode_buttons = {
+            "core_pro": self.btn_setup_mode_core,
+            "business_owner": self.btn_setup_mode_owner,
+        }
+
+        for mode_name, btn in self._setup_mode_buttons.items():
+            btn.setCheckable(True)
+            btn.setObjectName("setup_mode_button")
+            btn.clicked.connect(lambda checked=False, m=mode_name: self._set_setup_mode(m))
+            mode_row.addWidget(btn)
+
+        layout.addLayout(mode_row)
+
+        self._setup_business_owner_fields = QFrame(card)
+        owner_layout = QVBoxLayout(self._setup_business_owner_fields)
+        owner_layout.setContentsMargins(0, 0, 0, 0)
+        owner_layout.setSpacing(8)
+
+        self._setup_owner_auth_session = None
+        self._setup_owner_auth_complete = False
+        self._setup_owner_reset_required = False
+        self._setup_owner_current_password = ""
+
+        owner_title = QLabel("Business Owner", self._setup_business_owner_fields)
+        owner_title.setObjectName("setup_section_title")
+        owner_layout.addWidget(owner_title)
+
+        self.txt_setup_owner_email = QLineEdit(self._setup_business_owner_fields)
+        self.txt_setup_owner_email.setPlaceholderText("Owner email")
+        owner_layout.addWidget(self.txt_setup_owner_email)
+
+        self.txt_setup_owner_password = QLineEdit(self._setup_business_owner_fields)
+        self.txt_setup_owner_password.setPlaceholderText("Temp password / password")
+        self.txt_setup_owner_password.setEchoMode(QLineEdit.EchoMode.Password)
+        owner_layout.addWidget(self.txt_setup_owner_password)
+
+        owner_signin_row = QHBoxLayout()
+        owner_signin_row.setContentsMargins(0, 0, 0, 0)
+        owner_signin_row.setSpacing(10)
+
+        self.btn_setup_owner_sign_in = QPushButton("Sign In", self._setup_business_owner_fields)
+        self.btn_setup_owner_sign_in.setObjectName("setup_secondary_button")
+        self.btn_setup_owner_sign_in.clicked.connect(self._setup_owner_sign_in)
+        owner_signin_row.addWidget(self.btn_setup_owner_sign_in)
+
+        owner_signin_row.addStretch(1)
+        owner_layout.addLayout(owner_signin_row)
+
+        self.lbl_setup_owner_auth_status = QLabel(
+            "Sign in with the email and temporary password from your onboarding email.",
+            self._setup_business_owner_fields,
+        )
+        self.lbl_setup_owner_auth_status.setObjectName("setup_subtitle")
+        self.lbl_setup_owner_auth_status.setWordWrap(True)
+        owner_layout.addWidget(self.lbl_setup_owner_auth_status)
+
+        self._setup_owner_reset_fields = QFrame(self._setup_business_owner_fields)
+        reset_layout = QVBoxLayout(self._setup_owner_reset_fields)
+        reset_layout.setContentsMargins(0, 4, 0, 0)
+        reset_layout.setSpacing(8)
+
+        reset_title = QLabel("Set Permanent Password", self._setup_owner_reset_fields)
+        reset_title.setObjectName("setup_section_title")
+        reset_layout.addWidget(reset_title)
+
+        self.txt_setup_owner_new_password = QLineEdit(self._setup_owner_reset_fields)
+        self.txt_setup_owner_new_password.setPlaceholderText("New password (12+ characters)")
+        self.txt_setup_owner_new_password.setEchoMode(QLineEdit.EchoMode.Password)
+        reset_layout.addWidget(self.txt_setup_owner_new_password)
+
+        self.txt_setup_owner_confirm_password = QLineEdit(self._setup_owner_reset_fields)
+        self.txt_setup_owner_confirm_password.setPlaceholderText("Confirm new password")
+        self.txt_setup_owner_confirm_password.setEchoMode(QLineEdit.EchoMode.Password)
+        reset_layout.addWidget(self.txt_setup_owner_confirm_password)
+
+        reset_btn_row = QHBoxLayout()
+        reset_btn_row.setContentsMargins(0, 0, 0, 0)
+        reset_btn_row.setSpacing(10)
+
+        self.btn_setup_owner_set_password = QPushButton("Set Password", self._setup_owner_reset_fields)
+        self.btn_setup_owner_set_password.setObjectName("setup_secondary_button")
+        self.btn_setup_owner_set_password.clicked.connect(self._setup_owner_submit_password_reset)
+        reset_btn_row.addWidget(self.btn_setup_owner_set_password)
+
+        reset_btn_row.addStretch(1)
+        reset_layout.addLayout(reset_btn_row)
+
+        self._setup_owner_reset_fields.hide()
+        owner_layout.addWidget(self._setup_owner_reset_fields)
+
+        layout.addWidget(self._setup_business_owner_fields)
+
+        self._setup_business_seat_fields = QFrame(card)
+        seat_layout = QVBoxLayout(self._setup_business_seat_fields)
+        seat_layout.setContentsMargins(0, 0, 0, 0)
+        seat_layout.setSpacing(8)
+        seat_title = QLabel("Business Seat", self._setup_business_seat_fields)
+        seat_title.setObjectName("setup_section_title")
+        seat_layout.addWidget(seat_title)
+        self.txt_setup_invite_token = QLineEdit(self._setup_business_seat_fields)
+        self.txt_setup_invite_token.setPlaceholderText("Invite token")
+        seat_layout.addWidget(self.txt_setup_invite_token)
+        layout.addWidget(self._setup_business_seat_fields)
+
+        self._setup_nas_fields = QFrame(card)
+        nas_layout = QVBoxLayout(self._setup_nas_fields)
+        nas_layout.setContentsMargins(0, 0, 0, 0)
+        nas_layout.setSpacing(8)
+        nas_title = QLabel("NAS Configuration", self._setup_nas_fields)
+        nas_title.setObjectName("setup_section_title")
+        nas_layout.addWidget(nas_title)
+        nas_row = QHBoxLayout()
+        self.txt_setup_nas_path = QLineEdit(self._setup_nas_fields)
+        self.txt_setup_nas_path.setPlaceholderText(r"UNC path (Example: \\SERVER\Share)")
+        nas_row.addWidget(self.txt_setup_nas_path, 1)
+        self.btn_setup_validate_nas = QPushButton("Validate", self._setup_nas_fields)
+        self.btn_setup_validate_nas.setObjectName("setup_secondary_button")
+        self.btn_setup_validate_nas.clicked.connect(self._setup_validate_nas_placeholder)
+        nas_row.addWidget(self.btn_setup_validate_nas)
+        nas_layout.addLayout(nas_row)
+        layout.addWidget(self._setup_nas_fields)
+
+        self.lbl_setup_status = QLabel(
+            "Phase A shell only: backend login, password reset, invite consume, and NAS save/validate wiring come next.",
+            card,
+        )
+        self.lbl_setup_status.setObjectName("setup_subtitle")
+        self.lbl_setup_status.setWordWrap(True)
+        layout.addWidget(self.lbl_setup_status)
+
+        action_row = QHBoxLayout()
+        action_row.addStretch(1)
+        self.btn_setup_complete = QPushButton("Complete Setup", card)
+        self.btn_setup_complete.setObjectName("setup_primary_button")
+        self.btn_setup_complete.clicked.connect(self._setup_complete_placeholder)
+        action_row.addWidget(self.btn_setup_complete)
+        layout.addLayout(action_row)
+
+        self._setup_overlay = overlay
+        self._setup_card = card
+        self._set_setup_mode("core_pro")
+        self._sync_setup_panel_fields()
+        self._position_setup_panel()
+
+    def _position_setup_panel(self) -> None:
+        overlay = getattr(self, "_setup_overlay", None)
+        card = getattr(self, "_setup_card", None)
+        if overlay is None or card is None:
+            return
+
+        try:
+            parent = overlay.parentWidget()
+            if parent is not None:
+                overlay.setGeometry(parent.rect())
+        except Exception:
+            pass
+
+        try:
+            card.adjustSize()
+        except Exception:
+            pass
+
+        x = max(24, int((overlay.width() - card.width()) / 2))
+        y = max(24, int((overlay.height() - card.height()) / 2))
+        card.move(x, y)
+
+    def _set_setup_mode(self, mode_name: str) -> None:
+        normalized = str(mode_name or "core_pro").strip().lower() or "core_pro"
+        if normalized not in {"core_pro", "business_owner"}:
+            normalized = "core_pro"
+
+        self._setup_mode = normalized
+
+        for name, btn in getattr(self, "_setup_mode_buttons", {}).items():
+            try:
+                btn.setChecked(name == normalized)
+            except Exception:
+                pass
+
+        show_business_owner = normalized == "business_owner"
+        show_business_seat = False
+        show_nas = normalized == "business_owner"
+
+        try:
+            self._setup_business_owner_fields.setVisible(show_business_owner)
+            self._setup_business_seat_fields.setVisible(show_business_seat)
+            self._setup_nas_fields.setVisible(show_nas)
+        except Exception:
+            pass
+
+        self._position_setup_panel()
+
+    def _sync_setup_panel_fields(self) -> None:
+        overlay = getattr(self, "_setup_overlay", None)
+        if overlay is None:
+            return
+
+        try:
+            st = check_license()
+            state = str(getattr(st, "state", "") or "").strip().upper() or "UNKNOWN"
+            plan = str(
+                getattr(st, "plan", None)
+                or getattr(st, "tier", None)
+                or getattr(st, "kind", None)
+                or ""
+            ).strip().lower()
+            message = str(getattr(st, "message", "") or "").strip()
+        except Exception as e:
+            state = "ERROR"
+            plan = ""
+            message = str(e)
+
+        try:
+            if plan:
+                self.txt_setup_license.setText(f"Current license state: {state} ({plan.upper()})")
+            else:
+                self.txt_setup_license.setText(f"Current license state: {state}")
+        except Exception:
+            pass
+
+        try:
+            current_mode = str(getattr(self, "_setup_mode", "core_pro") or "core_pro").strip().lower()
+            if plan == "business" and current_mode == "core_pro":
+                self._set_setup_mode("business_owner")
+        except Exception:
+            pass
+
+        try:
+            if state == "UNLICENSED":
+                self.lbl_setup_status.setText(
+                    "Import your license to begin setup. Business owner login, seat join, password reset, and NAS wiring are next-phase hookups."
+                )
+            elif plan == "business":
+                owner_done = bool(getattr(self, "_setup_owner_auth_complete", False))
+                if owner_done:
+                    self.lbl_setup_status.setText(
+                        "Business license detected. Owner authentication is complete. Continue setup with NAS configuration."
+                    )
+                else:
+                    self.lbl_setup_status.setText(
+                        "Business license detected. Continue setup here: owner login or seat join is still required before entering normal app state."
+                    )
+            else:
+                self.lbl_setup_status.setText(
+                    f"Current license state: {state}. {message}".strip()
+                )
+        except Exception:
+            pass
+
+    def _show_setup_panel_if_needed(self) -> None:
+        overlay = getattr(self, "_setup_overlay", None)
+        if overlay is None:
+            return
+
+        self._sync_setup_panel_fields()
+        self._position_setup_panel()
+        overlay.show()
+        overlay.raise_()
+
+    def _hide_setup_panel(self) -> None:
+        overlay = getattr(self, "_setup_overlay", None)
+        if overlay is None:
+            return
+        overlay.hide()
+
+    def _sync_setup_panel_state(self) -> None:
+        if self._setup_required():
+            self._show_setup_panel_if_needed()
+        else:
+            self._hide_setup_panel()
+
+    def _setup_owner_set_status(
+        self,
+        text: str,
+        *,
+        success: bool = False,
+        error: bool = False,
+    ) -> None:
+        label = getattr(self, "lbl_setup_owner_auth_status", None)
+        if label is None:
+            return
+
+        try:
+            label.setText(str(text or ""))
+            color = "rgba(235, 235, 235, 185)"
+            if success:
+                color = "#52d273"
+            elif error:
+                color = "#ff8a8a"
+            label.setStyleSheet(f"color: {color}; font-size: 12px;")
+        except Exception:
+            pass
+
+    def _setup_owner_show_reset_fields(self, visible: bool) -> None:
+        frame = getattr(self, "_setup_owner_reset_fields", None)
+        if frame is None:
+            return
+
+        try:
+            frame.setVisible(bool(visible))
+        except Exception:
+            pass
+
+        try:
+            self.txt_setup_owner_email.setReadOnly(bool(visible))
+            self.txt_setup_owner_password.setReadOnly(bool(visible))
+        except Exception:
+            pass
+
+        try:
+            self.btn_setup_owner_sign_in.setEnabled(not bool(visible))
+        except Exception:
+            pass
+
+        try:
+            self._position_setup_panel()
+        except Exception:
+            pass
+
+    def _setup_owner_store_session(self, session: dict) -> None:
+        normalized = dict(session or {})
+        self._setup_owner_auth_session = normalized
+        self._business_admin_session = normalized
+
+        global _GLOBAL_ADMIN_SESSION
+        _GLOBAL_ADMIN_SESSION = normalized
+
+        try:
+            root = self
+            while hasattr(root, "parent") and callable(root.parent):
+                nxt = root.parent()
+                if not nxt:
+                    break
+                root = nxt
+            if root is not None:
+                setattr(root, "_business_admin_session", normalized)
+        except Exception:
+            pass
+
+    def _setup_owner_persist_complete(self, email: str = "") -> None:
+        try:
+            cfg_dir = Path(os.environ.get("APPDATA", "")) / "DevVault"
+            cfg_dir.mkdir(parents=True, exist_ok=True)
+            cfg_path = cfg_dir / "config.json"
+
+            data = {}
+            if cfg_path.exists():
+                try:
+                    data = json.loads(cfg_path.read_text(encoding="utf-8")) or {}
+                    if not isinstance(data, dict):
+                        data = {}
+                except Exception:
+                    data = {}
+
+            data["setup_owner_auth_complete"] = True
+            if str(email or "").strip():
+                data["setup_owner_email"] = str(email or "").strip().lower()
+
+            cfg_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _setup_owner_persisted_complete(self) -> bool:
+        try:
+            cfg_path = Path(os.environ.get("APPDATA", "")) / "DevVault" / "config.json"
+            if not cfg_path.exists():
+                return False
+            data = json.loads(cfg_path.read_text(encoding="utf-8")) or {}
+            if not isinstance(data, dict):
+                return False
+            return bool(data.get("setup_owner_auth_complete"))
+        except Exception:
+            return False
+
+    def _setup_owner_sign_in(self) -> None:
+        email = str(self.txt_setup_owner_email.text() or "").strip()
+        password = str(self.txt_setup_owner_password.text() or "")
+
+        if not email:
+            self._setup_owner_set_status("Owner email is required.", error=True)
+            try:
+                self.txt_setup_owner_email.setFocus()
+            except Exception:
+                pass
+            return
+
+        if not password:
+            self._setup_owner_set_status("Temporary password is required.", error=True)
+            try:
+                self.txt_setup_owner_password.setFocus()
+            except Exception:
+                pass
+            return
+
+        self._setup_owner_set_status("Signing in with Business owner credentials...")
+        self._setup_owner_auth_complete = False
+        self._setup_owner_reset_required = False
+        self._setup_owner_current_password = password
+
+        hostname = str(
+            os.environ.get("COMPUTERNAME")
+            or os.environ.get("HOSTNAME")
+            or ""
+        ).strip()
+        device_id = hostname
+
+        try:
+            result = login_business_admin_with_password(
+                email=email,
+                password=password,
+                hostname=hostname,
+                device_id=device_id,
+                app_version=_safe_app_version(),
+            )
+        except BusinessSeatApiError as e:
+            self._setup_owner_set_status(
+                f"Sign in failed: {e}",
+                error=True,
+            )
+            return
+        except Exception as e:
+            self._setup_owner_set_status(
+                f"Unexpected sign-in failure: {e}",
+                error=True,
+            )
+            return
+
+        if not isinstance(result, dict):
+            self._setup_owner_set_status(
+                "Unexpected sign-in response from Business auth service.",
+                error=True,
+            )
+            return
+
+        try:
+            _centered_message(
+                self,
+                "DEBUG Owner Login Result",
+                str(result),
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.Icon.Information,
+            )
+        except Exception:
+            pass
+
+        self._setup_owner_store_session(result)
+
+        password_reset_required = bool(result.get("password_reset_required"))
+
+        account_status = str(
+            result.get("account_status")
+            or result.get("status")
+            or result.get("admin_account_status")
+            or ""
+        ).strip().lower()
+
+        reset_state_values = {
+            "pending_reset",
+            "reset_required",
+            "password_reset_required",
+            "must_reset_password",
+        }
+
+        if password_reset_required or account_status in reset_state_values:
+            self._setup_owner_reset_required = True
+            self._setup_owner_show_reset_fields(True)
+            self._setup_owner_set_status(
+                "Temporary password accepted. Set your permanent password now.",
+            )
+            try:
+                self.append_log(
+                    "Setup owner sign-in entered pending-reset state: "
+                    f"password_reset_required={password_reset_required}, "
+                    f"account_status={account_status or 'n/a'}"
+                )
+            except Exception:
+                pass
+            try:
+                self.txt_setup_owner_new_password.setFocus()
+            except Exception:
+                pass
+            return
+
+        self._setup_owner_auth_complete = True
+        self._setup_owner_persist_complete(email)
+        self._setup_owner_show_reset_fields(False)
+        self._setup_owner_set_status(
+            "Business owner sign-in complete. NAS setup is the next step.",
+            success=True,
+        )
+        try:
+            self._sync_setup_panel_fields()
+        except Exception:
+            pass
+
+    def _setup_owner_submit_password_reset(self) -> None:
+        email = str(self.txt_setup_owner_email.text() or "").strip()
+        current_password = str(getattr(self, "_setup_owner_current_password", "") or "")
+        new_password = str(self.txt_setup_owner_new_password.text() or "")
+        confirm_password = str(self.txt_setup_owner_confirm_password.text() or "")
+
+        if not email:
+            self._setup_owner_set_status("Owner email is required.", error=True)
+            return
+
+        if len(new_password) < 12:
+            self._setup_owner_set_status(
+                "The new password must be at least 12 characters.",
+                error=True,
+            )
+            return
+
+        if new_password != confirm_password:
+            self._setup_owner_set_status(
+                "The password confirmation does not match.",
+                error=True,
+            )
+            return
+
+        token = ""
+        session = getattr(self, "_setup_owner_auth_session", None)
+        if isinstance(session, dict):
+            token = str(session.get("admin_session_token") or "").strip()
+
+        if not token:
+            self._setup_owner_set_status(
+                "No owner auth session is available. Sign in again before saving the permanent password.",
+                error=True,
+            )
+            return
+
+        self._setup_owner_set_status("Saving permanent password...")
+
+        try:
+            set_business_admin_password(
+                email=email,
+                new_password=new_password,
+                token=token,
+                current_password=current_password,
+            )
+        except BusinessSeatApiError as e:
+            self._setup_owner_set_status(
+                f"Could not set permanent password: {e}",
+                error=True,
+            )
+            return
+        except Exception as e:
+            self._setup_owner_set_status(
+                f"Unexpected password reset failure: {e}",
+                error=True,
+            )
+            return
+
+        hostname = str(
+            os.environ.get("COMPUTERNAME")
+            or os.environ.get("HOSTNAME")
+            or ""
+        ).strip()
+        device_id = hostname
+
+        try:
+            refreshed = login_business_admin_with_password(
+                email=email,
+                password=new_password,
+                hostname=hostname,
+                device_id=device_id,
+                app_version=_safe_app_version(),
+            )
+        except BusinessSeatApiError as e:
+            self._setup_owner_set_status(
+                f"Password saved, but session refresh failed: {e}",
+                error=True,
+            )
+            return
+        except Exception as e:
+            self._setup_owner_set_status(
+                f"Password saved, but session refresh failed: {e}",
+                error=True,
+            )
+            return
+
+        if not isinstance(refreshed, dict):
+            self._setup_owner_set_status(
+                "Password saved, but Business auth returned an unexpected refresh response.",
+                error=True,
+            )
+            return
+
+        self._setup_owner_store_session(refreshed)
+        self._last_admin_reset_password = new_password
+        self._setup_owner_auth_complete = True
+        self._setup_owner_reset_required = False
+
+        try:
+            self.txt_setup_owner_password.setText(new_password)
+            self.txt_setup_owner_new_password.clear()
+            self.txt_setup_owner_confirm_password.clear()
+        except Exception:
+            pass
+
+        self._setup_owner_persist_complete(email)
+        self._setup_owner_show_reset_fields(False)
+        self._setup_owner_set_status(
+            "Permanent password saved. Business owner sign-in is complete. NAS setup is the next step.",
+            success=True,
+        )
+
+        # 🔥 AUTO SEAT ENROLLMENT (ON PASSWORD RESET)
+        try:
+            identity = get_business_seat_identity()
+        except Exception:
+            identity = None
+
+        try:
+            if not isinstance(identity, dict) or not str(identity.get("seat_id") or "").strip():
+                self.append_log("No seat identity detected — auto enrolling owner seat...")
+
+                import json, socket
+
+                raw = read_installed_license_text()
+                lic_doc = json.loads(raw)
+                lic_payload = lic_doc.get("payload", {}) if isinstance(lic_doc, dict) else {}
+
+                subscription_id = str(lic_payload.get("subscription_id") or "").strip()
+                customer_id = str(lic_payload.get("customer_id") or "").strip()
+
+                hostname = (
+                    str(os.environ.get("COMPUTERNAME") or "").strip()
+                    or str(os.environ.get("HOSTNAME") or "").strip()
+                    or socket.gethostname().strip()
+                )
+
+                response = enroll_business_seat(
+                    subscription_id=subscription_id,
+                    customer_id=customer_id,
+                    assigned_email=str(email).strip(),
+                    assigned_device_id=hostname,
+                    assigned_hostname=hostname,
+                    seat_label=hostname,
+                    notes="owner_auto_enroll",
+                    invite_token="",
+                    candidate_seat_id="",
+                    display_name=hostname,
+                    hostname=hostname,
+                    app_version=_safe_app_version(),
+                    installed_license=_collect_installed_license_context(),
+                    vault_evidence=_collect_vault_evidence_summary(),
+                    fingerprint_hash=_compute_device_fingerprint(),
+                )
+
+                seat_id = str(response.get("seat_id") or "").strip()
+                fleet_id = str(response.get("fleet_id") or "").strip()
+
+                if seat_id:
+                    set_business_seat_identity(
+                        seat_id=seat_id,
+                        fleet_id=fleet_id,
+                        subscription_id=subscription_id,
+                        customer_id=customer_id,
+                        assigned_email=str(response.get("assigned_email") or email).strip(),
+                        assigned_device_id=hostname,
+                        assigned_hostname=hostname,
+                        seat_label=str(response.get("seat_label") or hostname).strip(),
+                    )
+
+                    self.append_log("Owner seat auto-enrolled successfully.")
+
+        except Exception as e:
+            try:
+                self.append_log(f"Auto seat enrollment failed: {e}")
+            except Exception:
+                pass
+
+
+        try:
+            self._sync_setup_panel_fields()
+        except Exception:
+            pass
+
+    def _setup_validate_nas_placeholder(self) -> None:
+        try:
+            raw = str(self.txt_setup_nas_path.text() or "").strip()
+            if not raw:
+                _centered_message(self, "NAS Validation", "NAS path is required.")
+                return
+
+            dlg = BusinessHubDialog(self)
+            ok, status, msg = dlg._business_nas_probe(raw)
+
+            if not ok:
+                _centered_message(
+                    self,
+                    "NAS Validation Failed",
+                    f"{status}\n\n{msg}"
+                )
+                return
+
+            normalized = ""
+            try:
+                normalized = self._normalize_business_nas_root(raw)
+            except Exception:
+                normalized = str(raw or "").strip()
+
+            if not normalized:
+                _centered_message(self, "NAS Validation Failed", "Invalid UNC NAS path.")
+                return
+
+            set_business_nas_path(normalized)
+
+            try:
+                self.txt_setup_nas_path.setText(normalized)
+            except Exception:
+                pass
+
+            _centered_message(
+                self,
+                "NAS Validated",
+                f"NAS path validated and saved:\n\n{normalized}"
+            )
+
+            try:
+                self._sync_setup_panel_fields()
+            except Exception:
+                pass
+
+        except Exception as e:
+            _centered_message(self, "NAS Validation Error", str(e))
+
+    def _setup_complete_placeholder(self) -> None:
+        try:
+            # Ensure business license is valid
+            state, plan = self._setup_license_context()
+            if state != "VALID" or plan != "business":
+                _centered_message(
+                    self,
+                    "Setup Incomplete",
+                    "A valid Business license is required."
+                )
+                return
+
+            # Ensure owner auth complete
+            if not getattr(self, "_setup_owner_auth_complete", False):
+                _centered_message(
+                    self,
+                    "Setup Incomplete",
+                    "Owner authentication and password reset are required."
+                )
+                return
+
+            # Ensure NAS configured
+            try:
+                nas = str(get_business_nas_path() or "").strip()
+            except Exception:
+                nas = ""
+
+            if not nas:
+                _centered_message(
+                    self,
+                    "Setup Incomplete",
+                    "NAS configuration is required."
+                )
+                return
+
+            # Ensure local owner seat identity exists
+            try:
+                identity = get_business_seat_identity()
+            except Exception:
+                identity = None
+
+            if not isinstance(identity, dict) or not str(identity.get("seat_id") or "").strip():
+                _centered_message(
+                    self,
+                    "Setup Incomplete",
+                    "Owner seat activation must complete before setup can finish."
+                )
+                return
+
+            # Finalize runtime only
+            try:
+                from devvault_desktop.business_runtime_config import load_runtime, save_runtime
+
+                data = load_runtime() or {}
+                if not isinstance(data, dict):
+                    data = {}
+
+                data["mode"] = "active"
+
+                storage = data.get("storage") or {}
+                if not isinstance(storage, dict):
+                    storage = {}
+                storage["nas_path"] = nas
+                data["storage"] = storage
+
+                save_runtime(data)
+            except Exception as e:
+                try:
+                    self.append_log(f"Failed to finalize runtime active state: {e}")
+                except Exception:
+                    pass
+                _centered_message(self, "Setup Error", f"Could not finalize runtime state.\n\n{e}")
+                return
+
+            try:
+                self._sync_setup_panel_state()
+            except Exception:
+                pass
+
+            _centered_message(
+                self,
+                "Setup Complete",
+                "Business setup is complete. DevVault will now restart."
+            )
+
+            try:
+                import subprocess
+                import sys
+
+                exe = sys.executable
+                subprocess.Popen([exe, "-m", "devvault_desktop.qt_app"])
+                QTimer.singleShot(200, QApplication.instance().quit)
+            except Exception as e:
+                try:
+                    self.append_log(f"Setup complete restart failed: {e}")
+                except Exception:
+                    pass
+
+        except Exception as e:
+            _centered_message(self, "Setup Error", str(e))
 
     def _business_nas_startup_required(self) -> bool:
         try:
@@ -7011,6 +8110,48 @@ class DevVaultQt(QMainWindow):
         except Exception:
             pass
 
+    def _shutdown_qthread(self, attr_name: str, wait_ms: int = 3000) -> None:
+        try:
+            t = getattr(self, attr_name, None)
+        except Exception:
+            t = None
+
+        if t is None:
+            return
+
+        try:
+            t.requestInterruption()
+        except Exception:
+            pass
+
+        try:
+            t.quit()
+        except Exception:
+            pass
+
+        try:
+            t.wait(wait_ms)
+        except Exception:
+            pass
+
+    def closeEvent(self, event) -> None:
+        for attr_name in (
+            "_startup_scan_thread",
+            "_scan_thread",
+            "_backup_thread",
+            "_backup_exec_thread",
+            "_restore_thread",
+        ):
+            try:
+                self._shutdown_qthread(attr_name)
+            except Exception:
+                pass
+
+        try:
+            super().closeEvent(event)
+        except Exception:
+            pass
+
     def _apply_watermark(self, wm_size: int, opacity: float) -> None:
         if ASSET_WATERMARK.exists():
             pm = QPixmap(str(ASSET_WATERMARK))
@@ -7026,11 +8167,23 @@ class DevVaultQt(QMainWindow):
         self._position_watermark()
 
     def _position_watermark(self) -> None:
-        w = self.centralWidget().width()
-        h = self.centralWidget().height()
+        if not hasattr(self, "watermark") or self.watermark is None:
+            return
+
+        cw = self.centralWidget()
+        if cw is None:
+            return
+
         pm = self.watermark.pixmap()
         if pm is None:
             return
+
+        try:
+            w = cw.width()
+            h = cw.height()
+        except Exception:
+            return
+
         x = (w - pm.width()) // 2
         y = (h - pm.height()) // 2 + 10
         self.watermark.setGeometry(x, y, pm.width(), pm.height())
@@ -7187,11 +8340,8 @@ class DevVaultQt(QMainWindow):
         except Exception:
             pass
 
-        # FORCE RESTART AFTER LICENSE INSTALL (CORRECT LOCATION)
         try:
-            self._force_restart_for_runtime_refresh(
-                "License installed successfully. DevVault will now restart to load license state."
-            )
+            self._sync_setup_panel_state()
         except Exception:
             pass
 
@@ -8366,6 +9516,7 @@ class DevVaultQt(QMainWindow):
             return
 
         self._install_license_file(Path(file_path))
+        QTimer.singleShot(0, self._sync_setup_panel_state)
 
 
 
