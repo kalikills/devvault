@@ -3541,9 +3541,21 @@ class BusinessHubDialog(QDialog):
             if value:
                 return value
 
+        # fallback to installed license for clean-machine onboarding
+        try:
+            import json
+            raw = read_installed_license_text()
+            lic_doc = json.loads(raw)
+            lic_payload = lic_doc.get("payload", {}) if isinstance(lic_doc, dict) else {}
+            value = str(lic_payload.get("subscription_id") or "").strip()
+            if value:
+                return value
+        except Exception:
+            pass
+
         raise RuntimeError(
-            "Business subscription id is unavailable from runtime context. "
-            "Re-enroll this device seat or sign in again."
+            "Business subscription id is unavailable from runtime context or installed license. "
+            "Import the business license and try again."
         )
 
     def _installed_business_seat_limit(self) -> int | None:
@@ -4490,9 +4502,21 @@ class BusinessHubDialog(QDialog):
             if value:
                 return value
 
+        # fallback to installed license for clean-machine onboarding
+        try:
+            import json
+            raw = read_installed_license_text()
+            lic_doc = json.loads(raw)
+            lic_payload = lic_doc.get("payload", {}) if isinstance(lic_doc, dict) else {}
+            value = str(lic_payload.get("customer_id") or "").strip()
+            if value:
+                return value
+        except Exception:
+            pass
+
         raise RuntimeError(
-            "Business customer id is unavailable from runtime context. "
-            "Re-enroll this device seat or sign in again."
+            "Business customer id is unavailable from runtime context or installed license. "
+            "Import the business license and try again."
         )
 
     def _format_seat_enroll_error(self, exc: Exception) -> str:
@@ -5961,16 +5985,34 @@ class DevVaultQt(QMainWindow):
                     if not seat_id:
                         raise RuntimeError("Seat activation did not return a seat_id.")
 
+                    # STEP 1 — fetch authoritative seat list
+                    api_payload = list_business_seats(subscription_id)
+                    rows = normalize_business_seat_rows(api_payload)
+
+                    resolved = None
+
+                    for r in rows:
+                        if str(getattr(r, "seat_id", "") or "").strip() == seat_id:
+                            resolved = r
+                            break
+
+                    if not resolved:
+                        raise RuntimeError("Failed to resolve enrolled seat from authoritative seat list.")
+
+                    # STEP 2 — persist FULL authoritative identity
                     set_business_seat_identity(
-                        seat_id=seat_id,
-                        fleet_id=fleet_id,
+                        seat_id=str(getattr(resolved, "seat_id", "") or "").strip(),
+                        fleet_id=str(getattr(resolved, "fleet_id", "") or "").strip(),
                         subscription_id=subscription_id,
                         customer_id=customer_id,
-                        assigned_email=str(response.get("assigned_email") or assigned_email).strip(),
-                        assigned_device_id=str(response.get("assigned_device_id") or hostname).strip(),
-                        assigned_hostname=str(response.get("assigned_hostname") or hostname).strip(),
-                        seat_label=str(response.get("seat_label") or hostname).strip(),
+                        assigned_email=str(getattr(resolved, "assigned_email", "") or "").strip(),
+                        assigned_device_id=str(getattr(resolved, "assigned_device_id", "") or "").strip(),
+                        assigned_hostname=str(getattr(resolved, "assigned_hostname", "") or "").strip(),
+                        seat_label=str(getattr(resolved, "seat_label", "") or "").strip(),
+                        seat_role=str(getattr(resolved, "seat_role", "") or "").strip(),
                     )
+
+                    self._refresh_local_seat_identity_status()
 
                     self._force_restart_for_runtime_refresh(
                         "Seat activation completed successfully. DevVault will now restart to load the enrolled seat identity."
@@ -6017,9 +6059,21 @@ class DevVaultQt(QMainWindow):
             if value:
                 return value
 
+        # fallback to installed license for clean-machine onboarding
+        try:
+            import json
+            raw = read_installed_license_text()
+            lic_doc = json.loads(raw)
+            lic_payload = lic_doc.get("payload", {}) if isinstance(lic_doc, dict) else {}
+            value = str(lic_payload.get("subscription_id") or "").strip()
+            if value:
+                return value
+        except Exception:
+            pass
+
         raise RuntimeError(
-            "Business subscription id is unavailable from runtime context. "
-            "Re-enroll this device seat or sign in again."
+            "Business subscription id is unavailable from runtime context or installed license. "
+            "Import the business license and try again."
         )
 
     def _business_customer_id(self) -> str:
@@ -6047,9 +6101,21 @@ class DevVaultQt(QMainWindow):
             if value:
                 return value
 
+        # fallback to installed license for clean-machine onboarding
+        try:
+            import json
+            raw = read_installed_license_text()
+            lic_doc = json.loads(raw)
+            lic_payload = lic_doc.get("payload", {}) if isinstance(lic_doc, dict) else {}
+            value = str(lic_payload.get("customer_id") or "").strip()
+            if value:
+                return value
+        except Exception:
+            pass
+
         raise RuntimeError(
-            "Business customer id is unavailable from runtime context. "
-            "Re-enroll this device seat or sign in again."
+            "Business customer id is unavailable from runtime context or installed license. "
+            "Import the business license and try again."
         )
 
     def _build_business_fetch_request(self):
@@ -6804,6 +6870,21 @@ class DevVaultQt(QMainWindow):
             return True
 
         if plan == "business":
+            seat_identity = None
+            seat_role = ""
+
+            try:
+                seat_identity = get_business_seat_identity()
+            except Exception:
+                seat_identity = None
+
+            if isinstance(seat_identity, dict):
+                seat_role = str(seat_identity.get("seat_role") or "").strip().lower()
+
+            # Non-owner Business seats should not be blocked by owner-auth setup rules.
+            if seat_role and seat_role != "owner":
+                return False
+
             try:
                 runtime_path = Path(os.environ.get("ProgramData", "")) / "DevVault" / "business_runtime.json"
                 if runtime_path.exists():
@@ -6883,7 +6964,15 @@ class DevVaultQt(QMainWindow):
             QWidget#setup_overlay {
                 background: rgba(0, 0, 0, 190);
             }
-            QWidget#setup_card {
+            """
+        )
+
+        card = QFrame(overlay)
+        card.setObjectName("setup_card")
+        card.setFixedWidth(760)
+        card.setStyleSheet(
+            """
+            QFrame#setup_card {
                 background: rgba(12, 12, 12, 235);
                 border: 1px solid rgba(230, 194, 0, 120);
                 border-radius: 16px;
@@ -6892,15 +6981,48 @@ class DevVaultQt(QMainWindow):
                 color: #f5c400;
                 font-size: 24px;
                 font-weight: 700;
+                background: transparent;
+                border: none;
             }
             QLabel#setup_subtitle {
                 color: rgba(235, 235, 235, 185);
                 font-size: 12px;
+                background: transparent;
+                border: none;
             }
             QLabel#setup_section_title {
                 color: #f5c400;
                 font-size: 13px;
                 font-weight: 700;
+                background: transparent;
+                border: none;
+            }
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: rgba(0,0,0,80);
+                width: 12px;
+                margin: 0;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(245, 196, 0, 140);
+                min-height: 24px;
+                border-radius: 6px;
+                border: none;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: transparent;
+                border: none;
+            }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: transparent;
+                border: none;
             }
             QPushButton#setup_mode_button {
                 min-width: 150px;
@@ -6916,79 +7038,108 @@ class DevVaultQt(QMainWindow):
             }
             QLineEdit {
                 color: #f5c400;
-                background: rgba(0,0,0,110);
-                border: 1px solid rgba(120,120,120,140);
+                background-color: #0f0f0f;
+                border: 2px solid #f5c400;
+                border-radius: 6px;
                 padding: 10px 12px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #ffd700;
+                background-color: #181818;
             }
             QPushButton#setup_primary_button {
                 min-height: 42px;
                 border: 1px solid #f5c400;
                 border-radius: 10px;
-                background: rgba(245, 196, 0, 0.12);
+                background-color: #1a1a1a;
                 color: #f5c400;
                 font-weight: 700;
             }
+            QPushButton#setup_primary_button:hover {
+                background-color: #222222;
+            }
             QPushButton#setup_secondary_button {
                 min-height: 38px;
-                border: 1px solid rgba(120,120,120,140);
+                border: 2px solid #f5c400;
                 border-radius: 10px;
-                background: rgba(255,255,255,0.03);
+                background-color: #1a1a1a;
                 color: #e6c200;
+            }
+            QPushButton#setup_secondary_button:hover {
+                border-color: #f5c400;
+                background-color: #1c1c1c;
             }
             """
         )
 
-        card = QFrame(overlay)
-        card.setObjectName("setup_card")
-        card.setFixedWidth(760)
+        outer_layout = QVBoxLayout(card)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
 
-        layout = QVBoxLayout(card)
+        scroll = QScrollArea(card)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+
+        container = QWidget()
+        container.setObjectName("setup_scroll_container")
+        container.setStyleSheet("""
+            QWidget#setup_scroll_container {
+                background: rgba(0, 0, 0, 40);
+                border: none;
+            }
+        """)
+        layout = QVBoxLayout(container)
         layout.setContentsMargins(28, 24, 28, 24)
         layout.setSpacing(14)
 
-        title = QLabel("DevVault Setup", card)
+        scroll.setWidget(container)
+        outer_layout.addWidget(scroll)
+
+        title = QLabel("DevVault Setup", container)
         title.setObjectName("setup_title")
         title.setAlignment(Qt.AlignHCenter)
         layout.addWidget(title)
 
         subtitle = QLabel(
             "Complete initial configuration in one place to continue.",
-            card,
+            container,
         )
         subtitle.setObjectName("setup_subtitle")
         subtitle.setAlignment(Qt.AlignHCenter)
         subtitle.setWordWrap(True)
         layout.addWidget(subtitle)
 
-        license_title = QLabel("License", card)
+        license_title = QLabel("License", container)
         license_title.setObjectName("setup_section_title")
         layout.addWidget(license_title)
 
         license_row = QHBoxLayout()
-        self.txt_setup_license = QLineEdit(card)
+        self.txt_setup_license = QLineEdit(container)
         self.txt_setup_license.setReadOnly(True)
         self.txt_setup_license.setPlaceholderText("Import your DevVault license (.dvlic)")
         self.txt_setup_license.setText("No license installed")
         license_row.addWidget(self.txt_setup_license, 1)
 
-        self.btn_setup_install_license = QPushButton("Import License", card)
+        self.btn_setup_install_license = QPushButton("Import License", container)
         self.btn_setup_install_license.setObjectName("setup_secondary_button")
         self.btn_setup_install_license.clicked.connect(self.install_license)
         license_row.addWidget(self.btn_setup_install_license)
         layout.addLayout(license_row)
 
-        mode_title = QLabel("Setup Mode", card)
+        mode_title = QLabel("Setup Mode", container)
         mode_title.setObjectName("setup_section_title")
         layout.addWidget(mode_title)
 
         mode_row = QHBoxLayout()
         mode_row.setSpacing(10)
-        self.btn_setup_mode_core = QPushButton("Core / Pro", card)
-        self.btn_setup_mode_owner = QPushButton("Business Owner", card)
+        self.btn_setup_mode_core = QPushButton("Core / Pro", container)
+        self.btn_setup_mode_owner = QPushButton("Business Owner", container)
+        self.btn_setup_mode_user = QPushButton("Business User Setup", container)
 
         self._setup_mode_buttons = {
             "core_pro": self.btn_setup_mode_core,
             "business_owner": self.btn_setup_mode_owner,
+            "business_user": self.btn_setup_mode_user,
         }
 
         for mode_name, btn in self._setup_mode_buttons.items():
@@ -6999,7 +7150,7 @@ class DevVaultQt(QMainWindow):
 
         layout.addLayout(mode_row)
 
-        self._setup_business_owner_fields = QFrame(card)
+        self._setup_business_owner_fields = QFrame(container)
         owner_layout = QVBoxLayout(self._setup_business_owner_fields)
         owner_layout.setContentsMargins(0, 0, 0, 0)
         owner_layout.setSpacing(8)
@@ -7078,39 +7229,59 @@ class DevVaultQt(QMainWindow):
 
         layout.addWidget(self._setup_business_owner_fields)
 
-        self._setup_business_seat_fields = QFrame(card)
+        self._setup_business_seat_fields = QFrame(container)
         seat_layout = QVBoxLayout(self._setup_business_seat_fields)
         seat_layout.setContentsMargins(0, 0, 0, 0)
         seat_layout.setSpacing(8)
         seat_title = QLabel("Business Seat", self._setup_business_seat_fields)
         seat_title.setObjectName("setup_section_title")
         seat_layout.addWidget(seat_title)
+        self.txt_setup_invite_email = QLineEdit(self._setup_business_seat_fields)
+        self.txt_setup_invite_email.setPlaceholderText("Invite email (must match the invite)")
+        seat_layout.addWidget(self.txt_setup_invite_email)
+
         self.txt_setup_invite_token = QLineEdit(self._setup_business_seat_fields)
         self.txt_setup_invite_token.setPlaceholderText("Invite token")
         seat_layout.addWidget(self.txt_setup_invite_token)
+
+        self.btn_setup_activate_seat = QPushButton("Activate Seat", self._setup_business_seat_fields)
+        self.btn_setup_activate_seat.setObjectName("setup_primary_button")
+        self.btn_setup_activate_seat.clicked.connect(self._setup_activate_seat)
+        seat_layout.addWidget(self.btn_setup_activate_seat)
         layout.addWidget(self._setup_business_seat_fields)
 
-        self._setup_nas_fields = QFrame(card)
+        self._setup_nas_fields = QFrame(container)
         nas_layout = QVBoxLayout(self._setup_nas_fields)
         nas_layout.setContentsMargins(0, 0, 0, 0)
         nas_layout.setSpacing(8)
         nas_title = QLabel("NAS Configuration", self._setup_nas_fields)
         nas_title.setObjectName("setup_section_title")
         nas_layout.addWidget(nas_title)
+
         nas_row = QHBoxLayout()
         self.txt_setup_nas_path = QLineEdit(self._setup_nas_fields)
         self.txt_setup_nas_path.setPlaceholderText(r"UNC path (Example: \\SERVER\Share)")
         nas_row.addWidget(self.txt_setup_nas_path, 1)
-        self.btn_setup_validate_nas = QPushButton("Validate", self._setup_nas_fields)
+        self.btn_setup_validate_nas = QPushButton("Connect + Validate", self._setup_nas_fields)
         self.btn_setup_validate_nas.setObjectName("setup_secondary_button")
         self.btn_setup_validate_nas.clicked.connect(self._setup_validate_nas_placeholder)
         nas_row.addWidget(self.btn_setup_validate_nas)
         nas_layout.addLayout(nas_row)
+
+        self.txt_setup_nas_username = QLineEdit(self._setup_nas_fields)
+        self.txt_setup_nas_username.setPlaceholderText(r"NAS username (Example: TURNERMAIN\Lboyb)")
+        nas_layout.addWidget(self.txt_setup_nas_username)
+
+        self.txt_setup_nas_password = QLineEdit(self._setup_nas_fields)
+        self.txt_setup_nas_password.setPlaceholderText("NAS password")
+        self.txt_setup_nas_password.setEchoMode(QLineEdit.EchoMode.Password)
+        nas_layout.addWidget(self.txt_setup_nas_password)
+
         layout.addWidget(self._setup_nas_fields)
 
         self.lbl_setup_status = QLabel(
             "Phase A shell only: backend login, password reset, invite consume, and NAS save/validate wiring come next.",
-            card,
+            container,
         )
         self.lbl_setup_status.setObjectName("setup_subtitle")
         self.lbl_setup_status.setWordWrap(True)
@@ -7118,7 +7289,7 @@ class DevVaultQt(QMainWindow):
 
         action_row = QHBoxLayout()
         action_row.addStretch(1)
-        self.btn_setup_complete = QPushButton("Complete Setup", card)
+        self.btn_setup_complete = QPushButton("Complete Setup", container)
         self.btn_setup_complete.setObjectName("setup_primary_button")
         self.btn_setup_complete.clicked.connect(self._setup_complete_placeholder)
         action_row.addWidget(self.btn_setup_complete)
@@ -7154,7 +7325,7 @@ class DevVaultQt(QMainWindow):
 
     def _set_setup_mode(self, mode_name: str) -> None:
         normalized = str(mode_name or "core_pro").strip().lower() or "core_pro"
-        if normalized not in {"core_pro", "business_owner"}:
+        if normalized not in {"core_pro", "business_owner", "business_user"}:
             normalized = "core_pro"
 
         self._setup_mode = normalized
@@ -7166,7 +7337,7 @@ class DevVaultQt(QMainWindow):
                 pass
 
         show_business_owner = normalized == "business_owner"
-        show_business_seat = False
+        show_business_seat = normalized == "business_user"
         show_nas = normalized == "business_owner"
 
         try:
@@ -7177,6 +7348,88 @@ class DevVaultQt(QMainWindow):
             pass
 
         self._position_setup_panel()
+
+    def _setup_activate_seat(self) -> None:
+        try:
+            invite_email = str(self.txt_setup_invite_email.text() or "").strip()
+            if not invite_email:
+                raise RuntimeError("Invite email is required.")
+
+            invite_token = str(self.txt_setup_invite_token.text() or "").strip()
+            if not invite_token:
+                raise RuntimeError("Invite token is required.")
+
+            import socket
+
+            subscription_id = self._business_subscription_id()
+            customer_id = self._business_customer_id()
+
+            hostname = (
+                str(__import__("os").environ.get("COMPUTERNAME") or "").strip()
+                or socket.gethostname().strip()
+            )
+
+            # STEP 1 — enroll
+            response = enroll_business_seat(
+                subscription_id=subscription_id,
+                customer_id=customer_id,
+                assigned_email=str(self.txt_setup_invite_email.text() or "").strip(),
+                assigned_device_id=hostname,
+                assigned_hostname=hostname,
+                seat_label=hostname,
+                notes="setup_join_business",
+                invite_token=invite_token,
+                candidate_seat_id="",
+                display_name=hostname,
+                hostname=hostname,
+                app_version=_safe_app_version(),
+                installed_license=_collect_installed_license_context(),
+                vault_evidence=_collect_vault_evidence_summary(),
+                fingerprint_hash=_compute_device_fingerprint(),
+            )
+
+            seat_id = str(response.get("seat_id") or "").strip()
+            if not seat_id:
+                raise RuntimeError("Seat enrollment did not return seat_id.")
+
+            # STEP 2 — authoritative resolve
+            api_payload = list_business_seats(subscription_id)
+            rows = normalize_business_seat_rows(api_payload)
+
+            resolved = None
+            for r in rows:
+                if str(getattr(r, "seat_id", "") or "").strip() == seat_id:
+                    resolved = r
+                    break
+
+            if not resolved:
+                raise RuntimeError("Failed to resolve seat from server.")
+
+            # STEP 3 — persist identity
+            set_business_seat_identity(
+                seat_id=str(getattr(resolved, "seat_id", "") or "").strip(),
+                fleet_id=str(getattr(resolved, "fleet_id", "") or "").strip(),
+                subscription_id=subscription_id,
+                customer_id=customer_id,
+                assigned_email=str(getattr(resolved, "assigned_email", "") or "").strip(),
+                assigned_device_id=str(getattr(resolved, "assigned_device_id", "") or "").strip(),
+                assigned_hostname=str(getattr(resolved, "assigned_hostname", "") or "").strip(),
+                seat_label=str(getattr(resolved, "seat_label", "") or "").strip(),
+                seat_role=str(getattr(resolved, "seat_role", "") or "").strip(),
+            )
+
+            self._refresh_local_seat_identity_status()
+
+            # STEP 4 — restart
+            self._force_restart_for_runtime_refresh(
+                "Seat joined successfully. DevVault will restart."
+            )
+
+        except Exception as e:
+            try:
+                self.lbl_setup_status.setText(f"Seat activation failed: {e}")
+            except Exception:
+                pass
 
     def _sync_setup_panel_fields(self) -> None:
         overlay = getattr(self, "_setup_overlay", None)
@@ -7226,7 +7479,7 @@ class DevVaultQt(QMainWindow):
                     )
                 else:
                     self.lbl_setup_status.setText(
-                        "Business license detected. Continue setup here: owner login or seat join is still required before entering normal app state."
+                        "Business license detected. Use Business User Setup to activate this seat. NAS setup will continue after seat activation and restart."
                     )
             else:
                 self.lbl_setup_status.setText(
@@ -7509,7 +7762,9 @@ class DevVaultQt(QMainWindow):
         token = ""
         session = getattr(self, "_setup_owner_auth_session", None)
         if isinstance(session, dict):
-            token = str(session.get("token") or "").strip()
+            token = str(
+                session.get("admin_session_token") or session.get("token") or ""
+            ).strip()
 
         if not token:
             self._setup_owner_set_status(
@@ -7669,9 +7924,65 @@ class DevVaultQt(QMainWindow):
     def _setup_validate_nas_placeholder(self) -> None:
         try:
             raw = str(self.txt_setup_nas_path.text() or "").strip()
+
+            # normalize UNC path:
+            # valid form = \\HOST\Share  (double slash only at the start)
+            raw = raw.replace("/", "\\").strip()
+
+            # strip all leading slashes, then rebuild a clean UNC prefix
+            raw = raw.lstrip("\\")
+            parts = [part for part in raw.split("\\") if part]
+
+            if len(parts) >= 2:
+                raw = "\\\\" + parts[0] + "\\" + parts[1]
+            elif len(parts) == 1:
+                raw = "\\\\" + parts[0]
+            else:
+                raw = ""
+            username = str(getattr(self, "txt_setup_nas_username", None).text() or "").strip() if getattr(self, "txt_setup_nas_username", None) is not None else ""
+            password = str(getattr(self, "txt_setup_nas_password", None).text() or "") if getattr(self, "txt_setup_nas_password", None) is not None else ""
+
             if not raw:
                 _centered_message(self, "NAS Validation", "NAS path is required.")
                 return
+
+            if username and not password:
+                _centered_message(self, "NAS Validation", "NAS password is required when a username is provided.")
+                return
+
+            if password and not username:
+                _centered_message(self, "NAS Validation", "NAS username is required when a password is provided.")
+                return
+
+            if username and password:
+                import subprocess
+
+                try:
+                    subprocess.run(
+                        ["net", "use", raw, "/delete", "/y"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                except Exception:
+                    pass
+
+                connect = subprocess.run(
+                    ["net", "use", raw, f"/user:{username}", password],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if int(connect.returncode or 0) != 0:
+                    err = (connect.stderr or connect.stdout or "").strip()
+                    if not err:
+                        err = "Windows could not authenticate to the NAS share."
+                    _centered_message(
+                        self,
+                        "NAS Login Failed",
+                        err,
+                    )
+                    return
 
             dlg = BusinessHubDialog(self)
             ok, status, msg = dlg._business_nas_probe(raw)
@@ -7727,15 +8038,6 @@ class DevVaultQt(QMainWindow):
                 )
                 return
 
-            # Ensure owner auth complete
-            if not getattr(self, "_setup_owner_auth_complete", False):
-                _centered_message(
-                    self,
-                    "Setup Incomplete",
-                    "Owner authentication and password reset are required."
-                )
-                return
-
             # Ensure NAS configured
             try:
                 nas = str(get_business_nas_path() or "").strip()
@@ -7747,20 +8049,6 @@ class DevVaultQt(QMainWindow):
                     self,
                     "Setup Incomplete",
                     "NAS configuration is required."
-                )
-                return
-
-            # Ensure local owner seat identity exists
-            try:
-                identity = get_business_seat_identity()
-            except Exception:
-                identity = None
-
-            if not isinstance(identity, dict) or not str(identity.get("seat_id") or "").strip():
-                _centered_message(
-                    self,
-                    "Setup Incomplete",
-                    "Owner seat activation must complete before setup can finish."
                 )
                 return
 
@@ -10101,6 +10389,27 @@ class DevVaultQt(QMainWindow):
             "Permanent password saved successfully.",
         )
         return True
+
+
+
+    def _refresh_local_seat_identity_status(self) -> None:
+        try:
+            identity = get_business_seat_identity()
+        except Exception:
+            identity = None
+
+        try:
+            if not isinstance(identity, dict) or not str(identity.get("seat_id") or "").strip():
+                self.append_log("Seat: NOT ACTIVATED")
+                return
+
+            seat_id = str(identity.get("seat_id") or "").strip()
+            role = str(identity.get("role") or "").strip()
+
+            self.append_log(f"Seat active: {seat_id} (role={role})")
+
+        except Exception as e:
+            self.append_log(f"Seat status refresh failed: {e}")
 
     def _business_admin_sign_out(self) -> None:
 

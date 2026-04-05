@@ -84,3 +84,5 @@ _build_vm/
 _dist_vm/
 lambda.zip
 pyinstaller.spec
+
+DevVault_VM_Test.zip
