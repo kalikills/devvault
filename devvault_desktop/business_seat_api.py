@@ -585,3 +585,28 @@ def revoke_business_seat(seat_id: str) -> dict[str, Any]:
             "seat_id": seat_id,
         },
     )
+
+
+def force_backup_business_admin_target_seat(*, target_seat_id: str, admin_session_token: str) -> dict[str, Any]:
+    target_seat_id = target_seat_id.strip()
+    admin_session_token = admin_session_token.strip()
+
+    if not target_seat_id:
+        raise BusinessSeatApiError("target_seat_id is required")
+    if not admin_session_token:
+        raise BusinessSeatApiError("admin session token is required")
+
+    old_token = os.environ.get("DEVVAULT_BUSINESS_API_BEARER_TOKEN")
+    try:
+        os.environ["DEVVAULT_BUSINESS_API_BEARER_TOKEN"] = admin_session_token
+        return _post_json(
+            "/api/business/admins/force-backup",
+            {
+                "target_seat_id": target_seat_id,
+            },
+        )
+    finally:
+        if old_token is None:
+            os.environ.pop("DEVVAULT_BUSINESS_API_BEARER_TOKEN", None)
+        else:
+            os.environ["DEVVAULT_BUSINESS_API_BEARER_TOKEN"] = old_token
