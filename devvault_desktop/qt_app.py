@@ -96,6 +96,7 @@ from devvault_desktop.business_seat_api import (
     BusinessSeatApiError,
     create_business_invite,
     enroll_business_seat,
+    force_backup_business_admin_target_seat,
     issue_business_admin_seat_login_token,
     list_business_invites,
     list_business_seats,
@@ -1423,11 +1424,6 @@ class CreateInviteDialog(QDialog):
 
         root.addSpacing(6)
 
-        root.addWidget(QLabel("Invited Role *", self))
-        self.combo_role = QComboBox(self)
-        self.combo_role.addItems(["admin", "operator", "viewer"])
-        self.combo_role.setCurrentText("viewer")
-        root.addWidget(self.combo_role)
 
         root.addWidget(QLabel("Seat Label *", self))
         self.txt_seat_label = QLineEdit(self)
@@ -1509,7 +1505,7 @@ class CreateInviteDialog(QDialog):
 
         return True, {
             "invitee_email": dlg.txt_invitee_email.text().strip(),
-            "invited_role": dlg.combo_role.currentText().strip().lower(),
+            "invited_role": "operator",
             "seat_label": dlg.txt_seat_label.text().strip(),
             "assigned_hostname": dlg.txt_assigned_hostname.text().strip(),
             "notes": dlg.txt_notes.text().strip(),
@@ -1797,8 +1793,7 @@ class BusinessHubDialog(QDialog):
         self.btn_org = QPushButton("Organization Recovery Audit")
         self.btn_seats = QPushButton("Seat Identity / Readiness")
         self.btn_seat_mgmt = QPushButton("Seat Management")
-        self.btn_set_admin_password = QPushButton("Set Admin Password")
-        self.btn_set_admin_password.clicked.connect(self._set_admin_password_for_seat)
+        self.btn_admin_mgmt = QPushButton("Admin Management")
 
         self.btn_invites = QPushButton("Invite Management")
         self.btn_nas_config = QPushButton("Business NAS Configuration")
@@ -1812,7 +1807,7 @@ class BusinessHubDialog(QDialog):
             self.btn_org,
             self.btn_seats,
             self.btn_seat_mgmt,
-            self.btn_set_admin_password,
+            self.btn_admin_mgmt,
             self.btn_invites,
             self.btn_nas_config,
             self.btn_fleet,
@@ -1975,23 +1970,28 @@ class BusinessHubDialog(QDialog):
 
         seat_mgmt_actions = QHBoxLayout()
         self.btn_refresh_seat_mgmt = QPushButton("Refresh")
-        self.btn_add_manual_seat = QPushButton("Enroll Seat")
         self.btn_reassign_local_identity = QPushButton("Reset Identity")
         self.btn_run_seat_health = QPushButton("Seat Health")
         self.btn_remove_manual_seat = QPushButton("Revoke")
+        self.btn_force_backup_seat = QPushButton("Force Backup")
 
         for b in (
             self.btn_refresh_seat_mgmt,
-            self.btn_add_manual_seat,
             self.btn_reassign_local_identity,
             self.btn_run_seat_health,
             self.btn_remove_manual_seat,
+            self.btn_force_backup_seat,
         ):
             b.setMinimumHeight(36)
             seat_mgmt_actions.addWidget(b)
 
         seat_mgmt_actions.addStretch()
         seat_mgmt_layout.addLayout(seat_mgmt_actions)
+
+        self.lbl_last_action_status = QLabel("Last Action: none")
+        self.lbl_last_action_status.setWordWrap(True)
+        self.lbl_last_action_status.setStyleSheet("color:#8fd3ff;font-weight:700;padding:6px 0 10px 0;")
+        seat_mgmt_layout.addWidget(self.lbl_last_action_status)
 
         self.seat_mgmt_report = QTextEdit()
         self.seat_mgmt_report.setReadOnly(True)
@@ -2006,6 +2006,71 @@ class BusinessHubDialog(QDialog):
         seat_mgmt_layout.addLayout(signout_row)
 
         self.surface.addWidget(self.seat_mgmt_widget)
+
+        self.admin_mgmt_widget = QWidget()
+        admin_mgmt_layout = QVBoxLayout(self.admin_mgmt_widget)
+
+        admin_mgmt_title = QLabel("Admin Management")
+        admin_mgmt_title.setStyleSheet("font-size:22px;font-weight:700;")
+        admin_mgmt_layout.addWidget(admin_mgmt_title)
+
+        admin_mgmt_subtitle = QLabel(
+            "Owner-managed Business admin accounts. This surface will replace seat-based admin password handling."
+        )
+        admin_mgmt_subtitle.setWordWrap(True)
+        admin_mgmt_subtitle.setStyleSheet("color:#b8b8b8;")
+        admin_mgmt_layout.addWidget(admin_mgmt_subtitle)
+
+        if not hasattr(self, "admin_mgmt_report"):
+            self.admin_mgmt_report = QTextEdit()
+
+        admin_mgmt_actions = QHBoxLayout()
+
+        self.btn_refresh_admin_mgmt = QPushButton("Refresh Admin Status")
+        self.btn_add_admin_email = QPushButton("Add / Reset Admin")
+        self.btn_open_admin_signin = QPushButton("Business Admin Sign In")
+        self.btn_revoke_admin_mgmt = QPushButton("Revoke Admin Account")
+
+        self.btn_refresh_admin_mgmt.setMinimumHeight(36)
+        self.btn_add_admin_email.setMinimumHeight(36)
+        self.btn_open_admin_signin.setMinimumHeight(36)
+        self.btn_revoke_admin_mgmt.setMinimumHeight(36)
+
+        self.btn_revoke_admin_mgmt.clicked.connect(lambda: self.parent()._revoke_admin_account())
+
+        admin_mgmt_actions.addWidget(self.btn_refresh_admin_mgmt)
+        admin_mgmt_actions.addWidget(self.btn_add_admin_email)
+        admin_mgmt_actions.addWidget(self.btn_open_admin_signin)
+        admin_mgmt_actions.addWidget(self.btn_revoke_admin_mgmt)
+        admin_mgmt_actions.addStretch()
+
+        admin_mgmt_layout.addLayout(admin_mgmt_actions)
+
+
+        self.admin_mgmt_report.setReadOnly(True)
+        self.admin_mgmt_report.setPlainText(
+            "ADMIN MANAGEMENT\n"
+            "================\n\n"
+            "This surface is now reserved for the new account-based admin system.\n\n"
+            "Planned actions:\n"
+            "- Add Admin Email\n"
+            "- Reset Admin Password\n"
+            "- Admin Sign In\n"
+            "- Admin Session Status\n\n"
+            "Seat-based admin password controls are being retired."
+        )
+        admin_mgmt_layout.addWidget(self.admin_mgmt_report, 1)
+
+        admin_mgmt_actions = QHBoxLayout()
+        admin_mgmt_actions.addStretch()
+
+        self.btn_signout_admin_mgmt = QPushButton("Sign Out Business Session")
+        self.btn_signout_admin_mgmt.setMinimumHeight(36)
+        admin_mgmt_actions.addWidget(self.btn_signout_admin_mgmt)
+
+        admin_mgmt_layout.addLayout(admin_mgmt_actions)
+
+        self.surface.addWidget(self.admin_mgmt_widget)
 
         self.invite_widget = QWidget()
         invite_layout = QVBoxLayout(self.invite_widget)
@@ -2244,11 +2309,9 @@ class BusinessHubDialog(QDialog):
 
         admin_actions = QHBoxLayout()
         self.btn_admin_live_view = QPushButton("Live View")
-        self.btn_issue_admin_login_token = QPushButton("Issue Login Token")
-
+        
         for b in (
             self.btn_admin_live_view,
-            self.btn_issue_admin_login_token,
         ):
             b.setMinimumHeight(36)
             admin_actions.addWidget(b)
@@ -2351,6 +2414,9 @@ class BusinessHubDialog(QDialog):
                 self.surface.setCurrentWidget(self.seat_mgmt_widget)
             )
         )
+        self.btn_admin_mgmt.clicked.connect(
+            lambda: self.surface.setCurrentWidget(self.admin_mgmt_widget)
+        )
         self.btn_invites.clicked.connect(
             lambda: (
                 self._refresh_invite_management_surface(),
@@ -2359,6 +2425,10 @@ class BusinessHubDialog(QDialog):
         )
         self.btn_refresh_readiness.clicked.connect(self._refresh_readiness_surface)
         self.btn_refresh_seat_mgmt.clicked.connect(self._on_refresh_seat_management_clicked)
+        self.btn_refresh_admin_mgmt.clicked.connect(self._refresh_admin_management_surface)
+        self.btn_add_admin_email.clicked.connect(self._add_admin_email_from_admin_mgmt)
+
+        self.btn_open_admin_signin.clicked.connect(self._open_business_admin_sign_in_from_admin_mgmt)
         self.btn_refresh_invites.clicked.connect(self._on_refresh_invites_clicked)
         self.btn_nas_config.clicked.connect(
             lambda: (
@@ -2374,22 +2444,22 @@ class BusinessHubDialog(QDialog):
         self.btn_nas_save_manual.clicked.connect(self._save_manual_business_nas_candidate)
         self.btn_nas_login.clicked.connect(self._login_business_nas_credentials)
         self.btn_nas_initialize.clicked.connect(self.parent()._initialize_business_nas_vault)
-        self.btn_add_manual_seat.clicked.connect(self._enroll_seat_from_dialog)
         self.btn_create_invite.clicked.connect(self._create_invite_from_dialog)
         self.btn_resend_invite.clicked.connect(self._resend_invite_from_dialog)
         self.btn_revoke_invite.clicked.connect(self._revoke_invite_from_dialog)
         self.btn_reassign_local_identity.clicked.connect(self._reset_or_reassign_local_seat_identity)
         self.btn_run_seat_health.clicked.connect(self._run_selected_seat_health_check)
         self.btn_remove_manual_seat.clicked.connect(self._revoke_seat_from_dialog)
+        self.btn_force_backup_seat.clicked.connect(self._force_backup_selected_seat)
         self.btn_admin_live_view.clicked.connect(self._show_admin_live_view)
         self.btn_view_historical_seats.clicked.connect(self._show_historical_seat_records)
         self.btn_view_historical_invites.clicked.connect(self._show_historical_invites)
-        self.btn_issue_admin_login_token.clicked.connect(self._issue_admin_login_token_for_selected_seat)
         self.btn_history.clicked.connect(self._show_historical_seat_records)
         self.btn_view_attention_seats.clicked.connect(self._open_attention_seats_view)
         self.btn_business_console_sign_out.clicked.connect(self._sign_out_and_close_console)
         self.btn_signout_readiness.clicked.connect(self._sign_out_and_close_console)
         self.btn_signout_seat_mgmt.clicked.connect(self._sign_out_and_close_console)
+        self.btn_signout_admin_mgmt.clicked.connect(self._sign_out_and_close_console)
         self.btn_signout_invites.clicked.connect(self._sign_out_and_close_console)
         self.btn_signout_nas.clicked.connect(self._sign_out_and_close_console)
         self.btn_signout_fleet.clicked.connect(self._sign_out_and_close_console)
@@ -3632,7 +3702,9 @@ class BusinessHubDialog(QDialog):
         hidden_rows = max(len(rows) - len(visible_rows), 0)
 
         lines = [
-            "DEVVAULT BUSINESS SEAT MANAGEMENT",
+
+        "DEVVAULT BUSINESS SEAT MANAGEMENT",
+        
             "================================",
             "",
             f"Subscription ID: {self._business_subscription_id()}",
@@ -3709,25 +3781,31 @@ class BusinessHubDialog(QDialog):
             )
 
         row = next((r for r in rows if str(r.seat_id).strip() == inviter_seat_id), None)
+
+        # ACCOUNT-LEVEL ADMIN BYPASS (owner/admin without seat)
         if row is None:
-            raise RuntimeError(
-                "The signed-in Business admin seat is not present in the current server seat inventory."
-            )
+            if inviter_seat_id == "ACCOUNT_ONLY" and inviter_role in {"owner", "admin"}:
+                row = None  # allowed, continue without inventory row
+            else:
+                raise RuntimeError(
+                    "The signed-in Business admin seat is not present in the current server seat inventory."
+                )
 
-        seat_status = str(row.seat_status or "").strip().lower()
-        if seat_status != "active":
-            raise RuntimeError(
-                f"Signed-in Business admin seat '{inviter_seat_id}' is not active and cannot manage invites."
-            )
+        if row is not None:
+            seat_status = str(row.seat_status or "").strip().lower()
+            if seat_status != "active":
+                raise RuntimeError(
+                    f"Signed-in Business admin seat '{inviter_seat_id}' is not active and cannot manage invites."
+                )
 
-        row_role = str(getattr(row, "seat_role", "") or "").strip().lower()
-        if row_role and row_role not in {"owner", "admin"}:
-            raise RuntimeError(
-                f"Signed-in Business admin seat '{inviter_seat_id}' has role '{row_role}' and cannot manage invites."
-            )
+            row_role = str(getattr(row, "seat_role", "") or "").strip().lower()
+            if row_role and row_role not in {"owner", "admin"}:
+                raise RuntimeError(
+                    f"Signed-in Business admin seat '{inviter_seat_id}' has role '{row_role}' and cannot manage invites."
+                )
 
-        if row_role in {"owner", "admin"}:
-            inviter_role = row_role
+            if row_role in {"owner", "admin"}:
+                inviter_role = row_role
 
         return fleet_id, inviter_seat_id, inviter_role
 
@@ -3740,9 +3818,7 @@ class BusinessHubDialog(QDialog):
             for row in rows
             if str(row.effective_status or "").strip().lower() == "pending"
         ]
-        if pending_rows:
-            return pending_rows
-        return rows
+        return pending_rows
 
     def _build_business_invite_management_text(
         self,
@@ -4170,8 +4246,6 @@ class BusinessHubDialog(QDialog):
             if not api_payload:
                 self.lbl_invite_capacity_warning.hide()
                 self.lbl_invite_capacity_warning.setText("")
-                self.btn_add_manual_seat.setEnabled(True)
-                self.btn_add_manual_seat.setText("Enroll Seat")
                 return
 
             active_count = count_active_business_seats(rows)
@@ -4234,34 +4308,24 @@ class BusinessHubDialog(QDialog):
                     "Use Reset / Reassign Seat Identity before enrolling another device."
                 )
                 self.lbl_invite_capacity_warning.show()
-                self.btn_add_manual_seat.setEnabled(False)
-                self.btn_add_manual_seat.setText("Enroll Seat (Blocked)")
             elif over_capacity:
                 self.lbl_invite_capacity_warning.setText(
                     "Fleet is over licensed capacity. "
                     "Active seats exceed plan limit. Revoke seats or upgrade plan to restore compliance before enrolling another device."
                 )
                 self.lbl_invite_capacity_warning.show()
-                self.btn_add_manual_seat.setEnabled(False)
-                self.btn_add_manual_seat.setText("Enroll Seat (Blocked)")
             elif at_capacity:
                 self.lbl_invite_capacity_warning.setText(
                     "Invites blocked: fleet is at licensed capacity. "
                     "Revoke a seat to free space before enrolling another device."
                 )
                 self.lbl_invite_capacity_warning.show()
-                self.btn_add_manual_seat.setEnabled(False)
-                self.btn_add_manual_seat.setText("Enroll Seat (Blocked)")
             else:
                 self.lbl_invite_capacity_warning.hide()
                 self.lbl_invite_capacity_warning.setText("")
-                self.btn_add_manual_seat.setEnabled(True)
-                self.btn_add_manual_seat.setText("Enroll Seat")
         except Exception:
             self.lbl_invite_capacity_warning.hide()
             self.lbl_invite_capacity_warning.setText("")
-            self.btn_add_manual_seat.setEnabled(True)
-            self.btn_add_manual_seat.setText("Enroll Seat")
 
     def _runtime_local_identity_matches(self, identity: dict | None) -> bool:
         if not isinstance(identity, dict):
@@ -4338,6 +4402,231 @@ class BusinessHubDialog(QDialog):
             self.lbl_local_seat_identity.setText(
                 "Local Device Seat Identity: Unavailable"
             )
+
+    def _admin_management_api_post(self, path: str, payload: dict | None = None) -> dict:
+        import json
+        import os
+        import urllib.error
+        import urllib.request
+
+        payload = payload or {}
+
+        try:
+            session = self.parent()._current_business_admin_session()
+        except Exception:
+            session = None
+
+        if not isinstance(session, dict):
+            raise RuntimeError("Business admin session not available.")
+
+        token = str((session or {}).get("admin_session_token") or "").strip()
+        if not token:
+            raise RuntimeError("Business admin session token missing.")
+
+        base = (
+            os.environ.get("DEVVAULT_BUSINESS_API_BASE_URL")
+            or os.environ.get("DEVVAULT_API_BASE_URL")
+            or "https://65xctm6uikd7qfnbghdefzda2i0jfewe.lambda-url.us-east-1.on.aws"
+        ).rstrip("/")
+
+        url = base + "/" + str(path or "").lstrip("/")
+
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            raise RuntimeError(str(e))
+
+        try:
+            data = json.loads(raw) if raw else {}
+        except Exception:
+            raise RuntimeError(raw or "Invalid API response")
+
+        bad_results = {
+            "unknown_route",
+            "denied",
+            "invalid_request",
+            "internal_error",
+            "accepted_with_internal_error",
+        }
+        if str(data.get("result") or "").strip().lower() in bad_results:
+            reason = str(data.get("reason") or data.get("message") or data.get("result") or "request_failed").strip()
+            raise RuntimeError(reason)
+
+        return data
+
+    def _refresh_admin_management_surface(self) -> None:
+        try:
+            session = self.parent()._current_business_admin_session()
+        except Exception:
+            session = None
+
+        session_active = isinstance(session, dict)
+        session_role = str((session or {}).get("role") or (session or {}).get("seat_role") or "").strip() or "n/a"
+        session_email = str((session or {}).get("email") or "").strip() or "n/a"
+        session_seat_id = str((session or {}).get("seat_id") or "").strip() or "n/a"
+        session_expires = str((session or {}).get("session_expires_at") or "").strip() or "n/a"
+
+        admins = []
+        fetch_error = ""
+
+        try:
+            api_data = self._admin_management_api_post("/api/business/admins/list", {})
+            admins = list(api_data.get("admins") or [])
+        except Exception as e:
+            fetch_error = str(e)
+
+        lines = [
+            "DEVVAULT ADMIN MANAGEMENT",
+            "=========================",
+            "",
+            "AUTHORITY MODEL",
+            "---------------",
+            "Owner = protected authority",
+            "Admin = authenticated business account/session",
+            "Seat = enrolled device/operator identity",
+            "",
+            "CURRENT SESSION",
+            "---------------",
+            f"Session Active: {'YES' if session_active else 'NO'}",
+            f"Role: {session_role}",
+            f"Email: {session_email}",
+            f"Seat ID: {session_seat_id}",
+            f"Session Expires: {session_expires}",
+            "",
+        ]
+
+        if fetch_error:
+            lines.extend([
+                "ADMIN ACCOUNT LIST",
+                "------------------",
+                f"Could not load admin list: {fetch_error}",
+            ])
+            self.admin_mgmt_report.setPlainText("\n".join(lines))
+            return
+
+        lines.extend([
+            "ADMIN ACCOUNT LIST",
+            "------------------",
+            f"Accounts Returned: {len(admins)}",
+            "",
+        ])
+
+        if not admins:
+            lines.append("No admin accounts found.")
+        else:
+            for item in admins:
+                email = str(item.get("email") or "n/a").strip() or "n/a"
+                role = str(item.get("role") or "n/a").strip() or "n/a"
+                status = str(item.get("status") or "n/a").strip() or "n/a"
+                reset_required = bool(item.get("password_reset_required"))
+                temp_password = str(item.get("temp_password_plain") or "").strip()
+                expires_at = str(item.get("temp_password_expires_at") or "").strip()
+                lines.extend([
+                    f"Email: {email}",
+                    f"Role: {role}",
+                    f"Status: {status}",
+                    f"Password Reset Required: {'YES' if reset_required else 'NO'}",
+                ])
+                if reset_required and temp_password:
+                    lines.append(f"Temporary Password: {temp_password}")
+                if reset_required and expires_at:
+                    lines.append(f"Temporary Password Expires: {expires_at}")
+                lines.append("-" * 48)
+
+        self.admin_mgmt_report.setPlainText("\n".join(lines))
+
+    def _add_admin_email_from_admin_mgmt(self) -> None:
+        from PySide6.QtWidgets import QInputDialog, QLineEdit
+
+        email, ok = QInputDialog.getText(
+            self,
+            "Add / Reset Admin",
+            "Admin Email:",
+            QLineEdit.EchoMode.Normal,
+        )
+        if not ok:
+            return
+
+        email = str(email or "").strip().lower()
+        if not email:
+            _centered_message(
+                self,
+                "Add / Reset Admin",
+                "Admin email is required.",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.Icon.Warning,
+            )
+            return
+
+        try:
+            api_data = self._admin_management_api_post(
+                "/api/business/admins/upsert",
+                {"email": email},
+            )
+        except Exception as e:
+            _centered_message(
+                self,
+                "Add / Reset Admin",
+                f"Could not create or reset admin.\n\n{e}",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.Icon.Critical,
+            )
+            return
+
+        result = str(api_data.get("result") or "").strip() or "ok"
+        temp_password = str(api_data.get("temp_password") or "").strip() or "n/a"
+
+        _centered_message(
+            self,
+            "Add / Reset Admin",
+            "Admin account updated successfully.\n\n"
+            f"Email: {email}\n"
+            f"Result: {result}\n"
+            f"Temporary Password: {temp_password}",
+            QMessageBox.StandardButton.Ok,
+            QMessageBox.StandardButton.Ok,
+            QMessageBox.Icon.Information,
+        )
+
+        try:
+            self._refresh_admin_management_surface()
+        except Exception:
+            pass
+
+    def _open_business_admin_sign_in_from_admin_mgmt(self) -> None:
+        try:
+            self.parent()._business_admin_sign_in()
+        except Exception as e:
+            _centered_message(
+                self,
+                "Business Admin Sign In",
+                f"Could not open Business Admin Sign In.\n\n{e}",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.Icon.Critical,
+            )
+            return
+
+        try:
+            self._refresh_admin_management_surface()
+        except Exception:
+            pass
 
     def _refresh_readiness_surface(self) -> None:
         try:
@@ -5359,6 +5648,70 @@ class BusinessHubDialog(QDialog):
 
         return choices
 
+    
+
+    def _force_backup_selected_seat(self) -> None:
+        try:
+            parent = self.parent()
+            if parent is None:
+                raise RuntimeError("Business console parent is unavailable.")
+
+            seat_choices = self._active_server_seat_choices()
+
+            if not seat_choices:
+                _centered_message(
+                    self,
+                    "Force Backup",
+                    "There are no active server seats available.",
+                )
+                return
+
+            labels = [str(label or "").strip() for label, _seat_id in seat_choices]
+            seat_map = {str(label or "").strip(): str(seat_id or "").strip() for label, seat_id in seat_choices}
+
+            selected_label, ok = QInputDialog.getItem(
+                self,
+                "Force Backup",
+                "Select an active server seat to force backup:",
+                labels,
+                0,
+                False,
+            )
+
+            if not ok or not str(selected_label or "").strip():
+                return
+
+            selected_seat_id = seat_map.get(str(selected_label).strip(), "").strip()
+            if not selected_seat_id:
+                _centered_message(
+                    self,
+                    "Force Backup",
+                    "Could not resolve the selected seat.",
+                )
+                return
+
+            ok_result = bool(parent._force_backup_business_seat(selected_seat_id))
+            try:
+                if ok_result:
+                    self.lbl_last_action_status.setText(f"Last Action: SUCCESS | Seat: {selected_seat_id}")
+                else:
+                    self.lbl_last_action_status.setText(f"Last Action: FAILED | Seat: {selected_seat_id}")
+            except Exception:
+                pass
+
+        except Exception as e:
+            _centered_message(
+                self,
+                "Force Backup",
+                f"Error:\n{e}",
+            )
+            return False
+        finally:
+            try:
+                self.btn_force_backup_seat.setEnabled(True)
+            except Exception:
+                pass
+
     def _revoke_seat_from_dialog(self) -> None:
         try:
             seat_choices = self._active_server_seat_choices()
@@ -5441,11 +5794,6 @@ class BusinessHubDialog(QDialog):
                 )
                 return
 
-            registry = SeatRegistryEngine(
-                registry_root=config_dir()
-            )
-            records = list(registry.sync())
-            selected = None
             live_row = None
 
             try:
@@ -5461,63 +5809,19 @@ class BusinessHubDialog(QDialog):
                     ),
                     None,
                 )
-
-                if live_row is not None:
-                    match_keys = set()
-
-                    assigned_hostname = str(getattr(live_row, "assigned_hostname", "") or "").strip().upper()
-                    assigned_device_id = str(getattr(live_row, "assigned_device_id", "") or "").strip().upper()
-
-                    if assigned_hostname:
-                        match_keys.add(assigned_hostname)
-                    if assigned_device_id:
-                        match_keys.add(assigned_device_id)
-
-                    if match_keys:
-                        selected = next(
-                            (
-                                seat
-                                for seat in records
-                                if str(getattr(seat, "seat_id", "") or "").strip().upper() in match_keys
-                                or bool({
-                                    str(x).strip().upper()
-                                    for x in getattr(seat, "hostnames", ()) or ()
-                                    if str(x).strip()
-                                } & match_keys)
-                            ),
-                            None,
-                        )
             except Exception:
-                selected = None
                 live_row = None
 
-            if selected is None:
-                selected = next(
-                    (
-                        seat
-                        for seat in records
-                        if str(getattr(seat, "seat_id", "") or "").strip() == normalized_seat_id
-                    ),
-                    None,
-                )
-
-            if selected is None:
+            if live_row is None:
                 _centered_message(
                     self,
                     "Run Health Check",
-                    f"Seat '{normalized_seat_id}' was not found in local registry evidence.",
+                    f"Seat '{normalized_seat_id}' was not found in server seat inventory.",
                     QMessageBox.StandardButton.Ok,
                     QMessageBox.StandardButton.Ok,
                     QMessageBox.Icon.Warning,
                 )
                 return
-
-            roots: set[Path] = set()
-            for endpoint in getattr(selected, "vault_endpoints", ()) or ():
-                try:
-                    roots.add(Path(endpoint).expanduser())
-                except Exception:
-                    continue
 
             request = FetchRequest(
                 scope_id=f"seat-health-check-{normalized_seat_id.lower()}",
@@ -5979,11 +6283,23 @@ class DevVaultQt(QMainWindow):
                         else:
                             raise
 
-                    seat_id = str(response.get("seat_id") or "").strip()
-                    fleet_id = str(response.get("fleet_id") or "").strip()
+                    seat_id = str(
+                        response.get("seat_id")
+                        or (response.get("seat_identity") or {}).get("seat_id")
+                        or (response.get("record") or {}).get("seat_id")
+                        or (response.get("seat") or {}).get("seat_id")
+                        or ""
+                    ).strip()
+                    fleet_id = str(
+                        response.get("fleet_id")
+                        or (response.get("seat_identity") or {}).get("fleet_id")
+                        or (response.get("record") or {}).get("fleet_id")
+                        or (response.get("seat") or {}).get("fleet_id")
+                        or ""
+                    ).strip()
 
                     if not seat_id:
-                        raise RuntimeError("Seat activation did not return a seat_id.")
+                        raise RuntimeError(f"Seat activation did not return a seat_id. Response: {response}")
 
                     # STEP 1 — fetch authoritative seat list
                     api_payload = list_business_seats(subscription_id)
@@ -7388,9 +7704,15 @@ class DevVaultQt(QMainWindow):
                 fingerprint_hash=_compute_device_fingerprint(),
             )
 
-            seat_id = str(response.get("seat_id") or "").strip()
+            seat_id = str(
+                response.get("seat_id")
+                or (response.get("seat_identity") or {}).get("seat_id")
+                or (response.get("record") or {}).get("seat_id")
+                or (response.get("seat") or {}).get("seat_id")
+                or ""
+            ).strip()
             if not seat_id:
-                raise RuntimeError("Seat enrollment did not return seat_id.")
+                raise RuntimeError(f"Seat enrollment did not return seat_id. Response: {response}")
 
             # STEP 2 — authoritative resolve
             api_payload = list_business_seats(subscription_id)
@@ -9894,14 +10216,19 @@ class DevVaultQt(QMainWindow):
             self._clear_business_admin_session()
             return None
 
-        seat_role = str(session.get("seat_role") or "").strip().lower()
+        account_role = str(
+            session.get("account_role")
+            or session.get("role")
+            or session.get("seat_role")
+            or ""
+        ).strip().lower()
 
         # VALID ADMIN SESSION:
         # - must have token
         # - must be owner/admin
         token = str(session.get("admin_session_token") or session.get("token") or "").strip()
 
-        if seat_role not in {"owner", "admin"}:
+        if account_role not in {"owner", "admin"}:
             return None
         if not token:
             return None
@@ -9912,10 +10239,15 @@ class DevVaultQt(QMainWindow):
         session = self._current_business_admin_session()
         if isinstance(session, dict):
             try:
-                seat_role = str(session.get("seat_role") or "").strip().lower()
+                account_role = str(
+                    session.get("account_role")
+                    or session.get("role")
+                    or session.get("seat_role")
+                    or ""
+                ).strip().lower()
                 token = str(session.get("admin_session_token") or session.get("token") or "").strip()
 
-                if seat_role in {"owner", "admin"} and token:
+                if account_role in {"owner", "admin"} and token:
                     return True
             except Exception:
                 pass
@@ -10021,6 +10353,239 @@ class DevVaultQt(QMainWindow):
         self._stop_business_admin_session_watchdog()
 
     
+    
+    def _force_backup_business_seat(self, target_seat_id: str) -> None:
+        try:
+            self.btn_force_backup_seat.setEnabled(False)
+        except Exception:
+            pass
+
+        seat_id = str(target_seat_id or "").strip()
+        if not seat_id:
+            _centered_message(
+                self,
+                "Force Backup",
+                "Missing target seat ID.",
+            )
+            return
+
+        session = getattr(self, "_business_admin_session", None) or {}
+        token = str(session.get("admin_session_token") or "").strip()
+        role = str(session.get("role") or "").strip().lower()
+
+        if role not in {"owner", "admin"}:
+            _centered_message(
+                self,
+                "Force Backup",
+                "Only owner or admin accounts can force seat backups.",
+            )
+            return
+
+        if not token:
+            _centered_message(
+                self,
+                "Force Backup",
+                "No active admin session token found.",
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Force Backup",
+            f"Issue a forced backup for seat:\n\n{seat_id} ?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            api_data = force_backup_business_admin_target_seat(
+                target_seat_id=seat_id,
+                admin_session_token=token,
+            )
+
+            result = str(api_data.get("result") or "").strip().lower()
+            action_id = str(api_data.get("action_id") or "").strip()
+
+            if result == "force_backup_issued":
+                _centered_message(
+                    self,
+                    "Force Backup",
+                    "Forced backup issued successfully.\n\n"
+                    f"Seat ID: {seat_id}\n"
+                    f"Action ID: {action_id or 'n/a'}",
+                )
+
+                try:
+                    self.lbl_last_action_status.setText(f"Last Action: SUCCESS | Seat: {seat_id}")
+                    try:
+                        dlg = getattr(self, "_business_hub_dialog", None)
+                        if dlg is not None and hasattr(dlg, "lbl_last_action_status"):
+                            dlg.lbl_last_action_status.setText(f"Last Action: SUCCESS | Seat: {seat_id}")
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                return True
+            else:
+                _centered_message(
+                    self,
+                    "Force Backup",
+                    f"Failed to issue forced backup.\n\nResult: {result or 'unknown'}",
+                )
+                try:
+                    self.lbl_last_action_status.setText(f"Last Action: FAILED | Result: {result or 'unknown'}")
+                    try:
+                        dlg = getattr(self, "_business_hub_dialog", None)
+                        if dlg is not None and hasattr(dlg, "lbl_last_action_status"):
+                            dlg.lbl_last_action_status.setText(f"Last Action: FAILED | Result: {result or 'unknown'}")
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                return False
+
+        except Exception as e:
+            _centered_message(
+                self,
+                "Force Backup",
+                f"Error:\n{e}",
+            )
+
+    def _revoke_admin_account(self) -> None:
+        import urllib.request
+        import urllib.error
+
+        session = getattr(self, "_business_admin_session", None)
+
+        if not session or not session.get("email"):
+            _centered_message(
+                self,
+                "Revoke Admin",
+                "No active admin session. Please sign in first.",
+            )
+            return
+
+        session_role = str(session.get("role") or "").strip().lower()
+
+        if session_role != "owner":
+            _centered_message(
+                self,
+                "Revoke Admin",
+                "Only the owner can revoke admin accounts.",
+            )
+            return
+
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+        email, ok = QInputDialog.getText(
+            self,
+            "Revoke Admin Account",
+            "Enter admin email to revoke:",
+        )
+
+        email = str(email or "").strip().lower()
+
+        if not ok or not email:
+            return
+
+        if email == str(session.get("email")).strip().lower():
+            _centered_message(
+                self,
+                "Revoke Admin",
+                "You cannot revoke the owner account.",
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Revoke",
+            f"Revoke admin access for:\n\n{email} ?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            token = str((session or {}).get("admin_session_token") or "").strip()
+            if not token:
+                raise RuntimeError("Business admin session token missing.")
+
+            base = (
+                os.environ.get("DEVVAULT_BUSINESS_API_BASE_URL")
+                or os.environ.get("DEVVAULT_API_BASE_URL")
+                or "https://65xctm6uikd7qfnbghdefzda2i0jfewe.lambda-url.us-east-1.on.aws"
+            ).rstrip("/")
+
+            url = base + "/api/business/admins/revoke"
+            body = json.dumps({"email": email}).encode("utf-8")
+
+            req = urllib.request.Request(
+                url,
+                data=body,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+
+            try:
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    api_data = json.loads(raw) if raw.strip() else {}
+            except urllib.error.HTTPError as e:
+                raw = e.read().decode("utf-8", errors="replace")
+                try:
+                    api_data = json.loads(raw) if raw.strip() else {}
+                except Exception:
+                    api_data = {}
+                message = (
+                    str(api_data.get("message") or "").strip()
+                    or str(api_data.get("reason") or "").strip()
+                    or str(api_data.get("result") or "").strip()
+                    or f"HTTP {e.code}"
+                )
+                raise RuntimeError(message)
+
+            result = str(api_data.get("result") or "").strip().lower()
+
+            if result == "admin_revoked":
+                revoked_session_count = int(api_data.get("revoked_session_count") or 0)
+                _centered_message(
+                    self,
+                    "Revoke Admin",
+                    "Admin account revoked successfully.\n\n"
+                    f"Email: {email}\n"
+                    f"Revoked Sessions: {revoked_session_count}",
+                )
+
+                try:
+                    parent = self.findChild(QDialog)
+                except Exception:
+                    parent = None
+
+                try:
+                    self._refresh_admin_status()
+                except Exception:
+                    pass
+            else:
+                _centered_message(
+                    self,
+                    "Revoke Admin",
+                    f"Failed to revoke admin account.\n\nResult: {result or 'unknown'}",
+                )
+
+        except Exception as e:
+            _centered_message(
+                self,
+                "Revoke Admin",
+                f"Error:\n{e}",
+            )
+
+
     def _business_admin_sign_in(self) -> None:
         dlg = QDialog(self)
         dlg.setWindowTitle("Business Admin Sign In")
@@ -10155,11 +10720,16 @@ class DevVaultQt(QMainWindow):
             )
             return
 
-        seat_role = str(result.get("seat_role") or "").strip().lower()
+        account_role = str(
+            result.get("account_role")
+            or result.get("role")
+            or result.get("seat_role")
+            or ""
+        ).strip().lower()
         seat_status = str(result.get("seat_status") or "").strip().lower()
 
         if seat_token:
-            if seat_role not in {"owner", "admin"} or seat_status != "active":
+            if account_role not in {"owner", "admin"} or seat_status != "active":
                 self._clear_business_admin_session()
                 _centered_message(
                     self,
@@ -10168,7 +10738,7 @@ class DevVaultQt(QMainWindow):
                 )
                 return
         else:
-            if seat_role not in {"owner", "admin"}:
+            if account_role not in {"owner", "admin"}:
                 self._clear_business_admin_session()
                 _centered_message(
                     self,
@@ -10180,8 +10750,17 @@ class DevVaultQt(QMainWindow):
         session = dict(result)
 
         # Normalize session contract for BOTH login paths
-        if "seat_role" not in session:
-            session["seat_role"] = "owner"
+        account_role = str(
+            session.get("account_role")
+            or session.get("role")
+            or session.get("seat_role")
+            or ""
+        ).strip().lower()
+
+        session["account_role"] = account_role
+        session["seat_role"] = account_role
+        session["role"] = account_role
+
         if "seat_status" not in session:
             session["seat_status"] = "active"
 
@@ -10363,7 +10942,11 @@ class DevVaultQt(QMainWindow):
             set_business_admin_password(
                 email=email,
                 new_password=new_password,
-                token=self._business_admin_session.get("token"),
+                token=str(
+    (self._business_admin_session or {}).get("admin_session_token")
+    or (self._business_admin_session or {}).get("token")
+    or ""
+).strip(),
                 current_password=current_password,
             )
         except BusinessSeatApiError as e:
@@ -11734,7 +12317,33 @@ class DevVaultQt(QMainWindow):
                 return
 
             fs = OSFileSystem()
+            
             rows = get_snapshot_rows(fs=fs, backup_root=vault_dir)
+
+            # --- Seat ownership filter ---
+            try:
+                identity = get_business_seat_identity() or {}
+                local_seat_id = str(identity.get("seat_id") or "").strip()
+            except Exception:
+                local_seat_id = ""
+
+            is_admin = bool(self._business_admin_session)
+
+            if not is_admin and local_seat_id:
+                filtered = []
+                for r in rows:
+                    try:
+                        snapshot_path = snapshot_storage_root(vault_dir) / r.snapshot_id
+                        from scanner.snapshot_metadata import read_snapshot_metadata
+                        md = read_snapshot_metadata(fs=fs, snapshot_dir=snapshot_path)
+                        seat_id = str((getattr(md, "business_identity", {}) or {}).get("seat_id") or "").strip()
+                        if seat_id == local_seat_id:
+                            filtered.append(r)
+                    except Exception:
+                        continue
+                rows = filtered
+
+
             store_root = snapshot_storage_root(vault_dir)
         except Exception as e:
             _centered_message(self, "Restore Refused", f"Could not load snapshots: {e}")
@@ -11802,6 +12411,29 @@ class DevVaultQt(QMainWindow):
             return
 
         snapshot_dir = label_to_snapshot[selected_label].expanduser().resolve()
+
+        # --- Seat ownership enforcement ---
+        try:
+            identity = get_business_seat_identity() or {}
+            local_seat_id = str(identity.get("seat_id") or "").strip()
+            is_admin = bool(self._business_admin_session)
+
+            if not is_admin and local_seat_id:
+                from scanner.snapshot_metadata import read_snapshot_metadata
+                md = read_snapshot_metadata(fs=OSFileSystem(), snapshot_dir=snapshot_dir)
+                seat_id = str((getattr(md, "business_identity", {}) or {}).get("seat_id") or "").strip()
+
+                if seat_id != local_seat_id:
+                    _centered_message(
+                        self,
+                        "Restore Blocked",
+                        "You are not authorized to restore this backup."
+                    )
+                    self.append_log("Restore blocked: seat ownership mismatch.")
+                    return
+        except Exception:
+            pass
+
 
         # 2) Read snapshot metadata and derive restored folder name
         try:

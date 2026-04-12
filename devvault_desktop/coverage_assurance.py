@@ -12,6 +12,7 @@ from scanner.snapshot_listing import list_snapshots
 from scanner.snapshot_metadata import read_snapshot_metadata
 
 from devvault_desktop.config import (
+    get_business_seat_identity,
     get_ignored_candidates,
     get_protected_roots,
     get_vault_dir,
@@ -19,8 +20,8 @@ from devvault_desktop.config import (
 )
 
 
-DATA_ROOT_NAMES = {"pictures", "videos", "downloads"}
-DATA_FOLDER_MIN_FILES = 35
+DATA_ROOT_NAMES = {"pictures", "videos", "downloads", "desktop"}
+DATA_FOLDER_MIN_FILES = 10
 ARCHIVE_MIN_BYTES = 10 * 1024 * 1024
 ARCHIVE_EXTENSIONS = {
     ".zip",
@@ -180,13 +181,22 @@ def _live_protected_roots() -> list[Path]:
             if md.source_name:
                 legacy_names.add(md.source_name.strip().lower())
 
-    # Always include explicitly protected roots (user intent)
-    for remembered in get_protected_roots():
-        try:
-            rp = Path(remembered).expanduser()
-        except Exception:
-            continue
-        roots.append(rp)
+    # Local remembered protected roots are valid for non-Business modes only.
+    # In Business mode, protection truth must come from live NAS snapshot evidence
+    # for the enrolled seat, not stale local remembered roots.
+    business_mode = False
+    try:
+        business_mode = bool(get_business_seat_identity())
+    except Exception:
+        business_mode = False
+
+    if not business_mode:
+        for remembered in get_protected_roots():
+            try:
+                rp = Path(remembered).expanduser()
+            except Exception:
+                continue
+            roots.append(rp)
 
     out: list[Path] = []
     seen: set[str] = set()
@@ -379,7 +389,26 @@ def _find_data_folder_candidates(
     found: list[Path] = []
     seen: set[str] = set()
 
+    import os
+
+    expanded_roots = []
+
     for root in scan_roots:
+        try:
+            if root.drive and root.name == "":
+                home = Path(os.path.expanduser("~"))
+                expanded_roots.extend([
+                    home / "Desktop",
+                    home / "Pictures",
+                    home / "Videos",
+                    home / "Downloads",
+                ])
+            else:
+                expanded_roots.append(root)
+        except Exception:
+            continue
+
+    for root in expanded_roots:
         if not _looks_like_data_root(root):
             continue
 

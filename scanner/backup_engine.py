@@ -283,14 +283,20 @@ class BackupEngine:
         self._finalize_snapshot_readonly(plan.backup_path)
         # Shared vault key lifecycle is bootstrap-authority driven (Section 4).
 
-        # Phase 3.5 — refresh snapshot index so Restore sees new backups immediately
-        try:
-            idx = rebuild_snapshot_index(fs=self._fs, backup_root=backup_root)
-            write_snapshot_index(fs=self._fs, index=idx)
-        except Exception:
-            pass
-
         finished_at = datetime.now(timezone.utc)
+        # Phase FINAL — rebuild snapshot index (authoritative refresh)
+        try:
+            idx = rebuild_snapshot_index(
+                fs=self._fs,
+                backup_root=request.backup_root,
+            )
+            write_snapshot_index(
+                fs=self._fs,
+                index=idx,
+            )
+        except Exception:
+            # Do NOT fail backup if index rebuild fails
+            pass
 
         return BackupResult(
             backup_id=plan.backup_id,

@@ -263,8 +263,7 @@ def scan_roots(
         try:
             ok, reason = is_project_dir(dir_path, fs=fs)
 
-            
-            # historical / archival working copies should not be promoted as active projects
+            # Skip archival / broken dirs
             name_lower = dir_path.name.lower()
             if (
                 "devvault_broken" in name_lower
@@ -276,11 +275,13 @@ def scan_roots(
                 dirs_skipped += 1
                 return
 
+            # --- Primary: real project detection ---
             if ok:
                 cloud_guard = scan_tree_for_cloud_placeholders(dir_path, max_hits=1)
                 if not cloud_guard.ok:
                     dirs_skipped += 1
                     return
+
                 ts = fs.stat(dir_path).st_mtime
                 size = dir_size_bytes(dir_path, fs=fs)
 
@@ -291,17 +292,38 @@ def scan_roots(
                         reason=reason,
                         size_bytes=size,
                         has_git=fs.exists(dir_path / ".git"),
-                        has_readme=any(
-                            fs.exists(dir_path / name)
-                            for name in ("README.md", "README", "readme.md")
-                        ),
-                        has_tests=fs.exists(dir_path / "tests")
-                        or fs.exists(dir_path / "test"),
+                        has_readme=False,
+                        has_tests=False,
                     )
                 )
                 return
 
+            # --- Fallback: real user data ---
+            try:
+                entries = list(fs.listdir(dir_path))
+                has_file = any(fs.is_file(dir_path / e) for e in entries)
+
+                if has_file:
+                    ts = fs.stat(dir_path).st_mtime
+                    size = dir_size_bytes(dir_path, fs=fs)
+
+                    found.append(
+                        FoundProject(
+                            path=dir_path,
+                            last_modified=datetime.fromtimestamp(ts),
+                            reason="unprotected data",
+                            size_bytes=size,
+                            has_git=False,
+                            has_readme=False,
+                            has_tests=False,
+                        )
+                    )
+                    return
+            except Exception:
+                pass
+
             for child in fs.iterdir(dir_path):
+
                 try:
                     if not fs.is_dir(child):
                         continue
