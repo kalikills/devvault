@@ -64,6 +64,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install dist/*.whl
           python -c "import scanner.models"
+          python -c "import devvault_desktop, pathlib; root = pathlib.Path(devvault_desktop.__file__).resolve().parent; assert (root / 'assets' / 'vault.ico').exists(); assert (root / 'assets' / 'bg_locks_with_text.png').exists(); assert (root / 'assets' / 'brand' / 'trustware-shield-watermark.png').exists()"
           devvault --help
 
       - name: Install wheel (Windows)
@@ -75,4 +76,5 @@ jobs:
           $whl = Get-ChildItem dist -Filter *.whl | Select-Object -First 1
           python -m pip install $whl.FullName
           python -c "import scanner.models"
+          python -c "import devvault_desktop, pathlib; root = pathlib.Path(devvault_desktop.__file__).resolve().parent; assert (root / 'assets' / 'vault.ico').exists(); assert (root / 'assets' / 'bg_locks_with_text.png').exists(); assert (root / 'assets' / 'brand' / 'trustware-shield-watermark.png').exists()"
           devvault --help

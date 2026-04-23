@@ -1212,3 +1212,22 @@ No thread deadlocks, UI freezes, or orphaned threads observed during live testin
 - Owner password reset path now performs no-token owner auto-enroll and persists local seat identity before setup can finish
 - Runtime active state is finalized at setup completion and the app restarts into normal mode
 - Hidden dev-only `Ctrl+Shift+R` setup re-entry shortcut added for repeatable onboarding tests
+
+## 2026-04-22 — Packaging asset integrity fixed and revalidated
+
+- Fixed wheel packaging so `devvault_desktop/assets/*` ships inside the published package via setuptools package-data.
+- Fixed PyInstaller packaging so desktop assets are bundled into the frozen application under `_internal/devvault_desktop/assets`.
+- Corrected the PyInstaller spec root-resolution path to use `SPECPATH`, allowing spec-time asset discovery during real builds.
+- Added CI package smoke assertions on both Linux and Windows that verify the installed wheel contains required desktop assets.
+- Ran fresh launch validation after the fix:
+  - `pytest -q` passed (`106 passed, 1 skipped`)
+  - destructive suite passed (`5 passed`)
+  - wheel rebuilt and installed into a clean venv outside the repo
+  - installed package resolved `vault.ico`, `bg_locks_with_text.png`, and `brand/trustware-shield-watermark.png`
+  - PyInstaller rebuild succeeded and the frozen `dist/DevVault` bundle contained the expected asset tree
+  - packaged `DevVault.exe` launched successfully and remained alive during startup smoke validation
+- Removed a `SyntaxWarning` in `coverage_assurance.py` discovered during the PyInstaller revalidation pass.
+
+Architectural impact:
+Closes a release-blocking integrity gap where source-tree desktop testing did not match shipped artifacts.
+DevVault packaging now preserves the same UI asset contract across source, wheel, and frozen desktop builds, with CI enforcing the invariant going forward.

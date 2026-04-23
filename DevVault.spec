@@ -1,11 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(globals().get("SPECPATH", ".")).resolve()
+ASSET_ROOT = PROJECT_ROOT / "devvault_desktop" / "assets"
+asset_datas = [
+    (
+        str(path),
+        str(Path("devvault_desktop") / "assets" / path.relative_to(ASSET_ROOT).parent),
+    )
+    for path in sorted(ASSET_ROOT.rglob("*"))
+    if path.is_file()
+]
 
 a = Analysis(
     ['devvault_desktop\\qt_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('devvault_desktop', 'devvault_desktop'), ('scanner', 'scanner')],
+    datas=asset_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

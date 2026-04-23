@@ -12,6 +12,7 @@ from scanner.snapshot_listing import list_snapshots
 from scanner.snapshot_metadata import read_snapshot_metadata
 
 from devvault_desktop.config import (
+    get_business_nas_path,
     get_business_seat_identity,
     get_ignored_candidates,
     get_protected_roots,
@@ -71,21 +72,38 @@ def _is_covered(candidate: Path, protected_roots: list[Path]) -> bool:
 
 def _known_vault_paths() -> list[Path]:
     known_vaults: list[str] = []
+
     active = (get_vault_dir() or "").strip()
     if active:
         known_vaults.append(active)
 
     for v in get_known_vault_dirs():
-        if v not in known_vaults:
-            known_vaults.append(v)
+        vv = str(v or "").strip()
+        if vv and vv not in known_vaults:
+            known_vaults.append(vv)
+
+    try:
+        business_nas = str(get_business_nas_path() or "").strip()
+    except Exception:
+        business_nas = ""
+
+    if business_nas and business_nas not in known_vaults:
+        known_vaults.append(business_nas)
 
     out: list[Path] = []
+    seen: set[str] = set()
     for vault_dir in known_vaults:
         try:
             p = Path(vault_dir).expanduser()
         except Exception:
             continue
+
+        key = str(p).lower().rstrip("\\/")
+        if not key or key in seen:
+            continue
+        seen.add(key)
         out.append(p)
+
     return out
 
 
@@ -173,7 +191,7 @@ def _live_protected_roots() -> list[Path]:
 
             if md.source_root:
                 try:
-                    roots.append(Path(md.source_root))
+                    roots.append(Path(md.source_root).expanduser().resolve())
                 except Exception:
                     pass
                 continue
@@ -181,16 +199,19 @@ def _live_protected_roots() -> list[Path]:
             if md.source_name:
                 legacy_names.add(md.source_name.strip().lower())
 
-    # Local remembered protected roots are valid for non-Business modes only.
-    # In Business mode, protection truth must come from live NAS snapshot evidence
-    # for the enrolled seat, not stale local remembered roots.
+    # Local remembered protected roots are valid for non-Business modes.
+    # In Business mode, live NAS snapshot evidence becomes authoritative once any
+    # reachable protection evidence exists. Before the first backup exists,
+    # remembered "Protect" choices must still count so onboarding can proceed.
     business_mode = False
     try:
         business_mode = bool(get_business_seat_identity())
     except Exception:
         business_mode = False
 
-    if not business_mode:
+    has_live_protection_evidence = bool(roots)
+
+    if (not business_mode) or (business_mode and not has_live_protection_evidence):
         for remembered in get_protected_roots():
             try:
                 rp = Path(remembered).expanduser()

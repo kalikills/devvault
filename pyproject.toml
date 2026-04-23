@@ -9,7 +9,10 @@ description = "Scan for development projects, estimate backup size, and flag ris
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Braden Turner" }]
-dependencies = []
+dependencies = [
+  "PySide6",
+  "cryptography",
+]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -22,7 +25,16 @@ devvault-desktop = "devvault_desktop.__main__:main"
 where = ["."]
 include = ["devvault*", "scanner*", "devvault_desktop*"]
 
+[tool.setuptools.package-data]
+devvault_desktop = [
+  "assets/*.png",
+  "assets/*.ico",
+  "assets/brand/*.png",
+]
+
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
 markers = [
   "destructive: destructive simulations (corruption, deletion) for launch-gate validation"
 ]

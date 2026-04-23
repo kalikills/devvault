@@ -3,14 +3,86 @@ from __future__ import annotations
 # --- GLOBAL ADMIN SESSION ---
 _GLOBAL_ADMIN_SESSION = {}
 
-
 import os
 import json
 import sys
 from datetime import datetime, timezone
 import subprocess
 import uuid
+
 from pathlib import Path
+
+def _ensure_unc_session(unc_path: str, username: str = "", password: str = "") -> tuple[bool, str]:
+    try:
+        import subprocess
+
+        raw = str(unc_path or "").strip()
+
+        # Must be UNC
+        if not raw.startswith("\\\\"):
+            return True, "not_unc"
+
+        parts = raw.strip("\\").split("\\")
+        if len(parts) < 2:
+            return False, "invalid_unc"
+
+        server = parts[0]
+        share = parts[1]
+        share_root = f"\\\\{server}\\{share}"
+
+        # Test direct access
+        probe = subprocess.run(
+            ["cmd.exe", "/c", "dir", share_root],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if probe.returncode == 0:
+            return True, "already_connected"
+
+        # Reset session
+        subprocess.run(
+            ["net", "use", share_root, "/delete", "/y"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        # Reconnect with creds if available
+        if username and password:
+            cp = subprocess.run(
+                ["net", "use", share_root, f"/user:{username}", password],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if cp.returncode == 0:
+                return True, "net_use_connected"
+
+            msg = (cp.stdout or "") + (cp.stderr or "")
+            return False, msg.strip() or "net_use_failed"
+
+        msg = (probe.stdout or "") + (probe.stderr or "")
+        return False, msg.strip() or "unc_not_accessible"
+
+    except Exception as e:
+        return False, str(e)
+
+def _get_saved_nas_credentials(self) -> tuple[str, str]:
+    try:
+        # common instance attribute names first
+        for user_attr, pass_attr in [
+            ("_business_nas_username", "_business_nas_password"),
+            ("_nas_username", "_nas_password"),
+        ]:
+            user = str(getattr(self, user_attr, "") or "").strip()
+            pw = str(getattr(self, pass_attr, "") or "")
+            if user and pw:
+                return user, pw
+    except Exception:
+        pass
+    return "", ""
+
 from devvault_desktop.business_runtime_config import get_mode, is_active, load_runtime
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QFileDialog
@@ -81,6 +153,7 @@ from devvault.licensing import LicenseError, install_license_text, verify_licens
 from devvault.validation_state import save_state
 from devvault.validation_client import validate_now
 from devvault.reminder_state import mark_unprotected, mark_protected
+from devvault_desktop.business_protection_state import record_business_protection_state
 
 from devvault_desktop.seat_registry import SeatRegistryEngine, SeatRecord
 from devvault_desktop.business_fetchers import (
@@ -90,6 +163,10 @@ from devvault_desktop.business_fetchers import (
     OrganizationRecoveryAuditFetcher,
     SeatProtectionStateFetcher,
     VaultHealthIntelligenceFetcher,
+)
+from devvault_desktop.business_fleet_status import (
+    load_business_fleet_status_map,
+    publish_business_fleet_status,
 )
 from devvault_desktop.business_runtime_config import ensure_business_runtime_config
 from devvault_desktop.business_seat_api import (
@@ -101,7 +178,6 @@ from devvault_desktop.business_seat_api import (
     list_business_invites,
     list_business_seats,
     login_business_admin_with_password,
-    login_business_admin_with_seat_token,
     resend_business_invite,
     set_business_admin_password,
     revoke_business_invite,
@@ -114,7 +190,6 @@ from devvault_desktop.business_seat_models import (
     normalize_business_invite_rows,
     normalize_business_seat_rows,
 )
-
 
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 
@@ -196,11 +271,6 @@ def _ensure_devvault_restores_shortcut(target_dir: Path) -> None:
         capture_output=True,
         text=True,
     )
-
-
-
-
-
 
 DEVVAULT_CUSTOM_DIALOG_STYLE = """
 QDialog {
@@ -295,7 +365,6 @@ QCheckBox::indicator:unchecked {
     border: 1px solid #666666;
     background: #0b0b0b;
 }
-
 
 /* List rows */
 QListWidget::item {
@@ -451,8 +520,6 @@ class BackupConfirmDialog(QDialog):
         )
         return dlg.exec() == QDialog.DialogCode.Accepted
 
-
-
 class ScanSelectionDialog(QDialog):
     """
     Popup checklist dialog for uncovered projects found during scan.
@@ -576,7 +643,6 @@ Uncheck anything you do not want included, then choose Back Up Selected.""",
         add_group("DATA FOLDERS", data)
         add_group("ARCHIVES", archives)
 
-
         root.addWidget(self.list_widget, 1)
 
         btn_row = QHBoxLayout()
@@ -615,7 +681,6 @@ Uncheck anything you do not want included, then choose Back Up Selected.""",
         ok = dlg.exec() == QDialog.DialogCode.Accepted
         return ok, dlg.selected_paths()
 
-
 def _drive_alive(root: "Path") -> bool:
     """
     Cheap best-effort drive health check.
@@ -629,8 +694,6 @@ def _drive_alive(root: "Path") -> bool:
         return root.exists() and root.is_dir()
     except Exception:
         return False
-
-
 
 def _kill_proc_tree(proc) -> None:
     """
@@ -666,7 +729,6 @@ def _kill_proc_tree(proc) -> None:
                 pass
     except Exception:
         pass
-
 
 def _run_engine_process(
     cmd: list[str],
@@ -724,8 +786,6 @@ def _run_engine_process(
     out = (proc.stdout.read() if proc.stdout else "") or ""
     err = (proc.stderr.read() if proc.stderr else "") or ""
     return rc, out, err, None
-
-
 
 class OperationOverlay(QWidget):
     """
@@ -860,7 +920,6 @@ class OperationOverlay(QWidget):
         }
         """)
 
-
     def set_title(self, text: str) -> None:
         try:
             self._title.setText(str(text or "Securing changes"))
@@ -941,7 +1000,6 @@ class OperationOverlay(QWidget):
             pass
         self._lock.setFont(f)
 
-
 def _centered_message(
     parent,
     first,
@@ -1013,7 +1071,6 @@ def _centered_message(
 
     return msg.exec()
 
-
 def _center_widget_on_parent(widget, parent) -> None:
     try:
         if parent is not None and parent.isVisible():
@@ -1031,7 +1088,6 @@ def _center_widget_on_parent(widget, parent) -> None:
     except Exception:
         pass
 
-
 def _group_token(token: str) -> str:
     raw = str(token or "").strip()
     if not raw:
@@ -1046,14 +1102,12 @@ def _group_token(token: str) -> str:
         for i in range(0, len(compact), 4)
     )
 
-
 def _safe_app_version() -> str:
     try:
         from devvault_desktop import __version__  # type: ignore
         return str(__version__)
     except Exception:
         return "unknown"
-
 
 def _collect_installed_license_context() -> dict:
     try:
@@ -1085,7 +1139,6 @@ def _collect_installed_license_context() -> dict:
         }
     except Exception:
         return {}
-
 
 def _collect_vault_evidence_summary() -> dict:
     try:
@@ -1121,7 +1174,6 @@ def _collect_vault_evidence_summary() -> dict:
     except Exception:
         return {}
 
-
 def _compute_device_fingerprint() -> str:
     try:
         import hashlib
@@ -1147,7 +1199,6 @@ def _compute_device_fingerprint() -> str:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
     except Exception:
         return ""
-
 
 class SnapshotSelectDialog(QDialog):
     def __init__(self, parent, snapshots):
@@ -1188,8 +1239,6 @@ class SnapshotSelectDialog(QDialog):
         if not ok:
             return False, None
         return True, dlg.combo.currentText()
-
-
 
 class EnrollSeatDialog(QDialog):
     def __init__(self, parent, *, subscription_id: str, customer_id: str):
@@ -1316,7 +1365,6 @@ class EnrollSeatDialog(QDialog):
             "assigned_device_id": dlg.txt_assigned_device_id.text().strip(),
         }
 
-
 class ProHubDialog(QDialog):
     def __init__(self, parent):
         self._business_nas_required = True # ensure defined early
@@ -1380,7 +1428,6 @@ class ProHubDialog(QDialog):
         if parent is not None:
             parent.open_recovery_audit_report()
 
-
 class CreateInviteDialog(QDialog):
     def __init__(self, parent):
         self._business_nas_required = True # ensure defined early
@@ -1423,7 +1470,6 @@ class CreateInviteDialog(QDialog):
         root.addWidget(email_hint)
 
         root.addSpacing(6)
-
 
         root.addWidget(QLabel("Seat Label *", self))
         self.txt_seat_label = QLineEdit(self)
@@ -1510,7 +1556,6 @@ class CreateInviteDialog(QDialog):
             "assigned_hostname": dlg.txt_assigned_hostname.text().strip(),
             "notes": dlg.txt_notes.text().strip(),
         }
-
 
 class InviteCreatedDialog(QDialog):
     def __init__(
@@ -1678,7 +1723,6 @@ class InviteCreatedDialog(QDialog):
         )
         dlg.exec()
 
-
 class RevokeSeatDialog(QDialog):
     def __init__(self, parent, seat_choices):
         self._business_nas_required = True # ensure defined early
@@ -1738,8 +1782,6 @@ class RevokeSeatDialog(QDialog):
 
         return True, dlg._choices[index][1]
 
-
-
 class ClickableCard(QLabel):
     def __init__(self, *args, on_click=None, **kwargs):
         self._business_nas_required = True # ensure defined early
@@ -1754,7 +1796,6 @@ class ClickableCard(QLabel):
         except Exception:
             pass
         super().mousePressEvent(event)
-
 
 class BusinessHubDialog(QDialog):
 
@@ -1973,25 +2014,18 @@ class BusinessHubDialog(QDialog):
         self.btn_reassign_local_identity = QPushButton("Reset Identity")
         self.btn_run_seat_health = QPushButton("Seat Health")
         self.btn_remove_manual_seat = QPushButton("Revoke")
-        self.btn_force_backup_seat = QPushButton("Force Backup")
 
         for b in (
             self.btn_refresh_seat_mgmt,
             self.btn_reassign_local_identity,
             self.btn_run_seat_health,
             self.btn_remove_manual_seat,
-            self.btn_force_backup_seat,
         ):
             b.setMinimumHeight(36)
             seat_mgmt_actions.addWidget(b)
 
         seat_mgmt_actions.addStretch()
         seat_mgmt_layout.addLayout(seat_mgmt_actions)
-
-        self.lbl_last_action_status = QLabel("Last Action: none")
-        self.lbl_last_action_status.setWordWrap(True)
-        self.lbl_last_action_status.setStyleSheet("color:#8fd3ff;font-weight:700;padding:6px 0 10px 0;")
-        seat_mgmt_layout.addWidget(self.lbl_last_action_status)
 
         self.seat_mgmt_report = QTextEdit()
         self.seat_mgmt_report.setReadOnly(True)
@@ -2046,19 +2080,17 @@ class BusinessHubDialog(QDialog):
 
         admin_mgmt_layout.addLayout(admin_mgmt_actions)
 
-
-        self.admin_mgmt_report.setReadOnly(True)
         self.admin_mgmt_report.setPlainText(
-            "ADMIN MANAGEMENT\n"
-            "================\n\n"
-            "This surface is now reserved for the new account-based admin system.\n\n"
-            "Planned actions:\n"
-            "- Add Admin Email\n"
-            "- Reset Admin Password\n"
-            "- Admin Sign In\n"
-            "- Admin Session Status\n\n"
-            "Seat-based admin password controls are being retired."
-        )
+    "ADMIN MANAGEMENT\n"
+    "================\n\n"
+    "Manage Business Admin Access\n\n"
+    "Business admin accounts are managed at the organization level.\n\n"
+    "Use the controls above to:\n"
+    " - Add or reset admin credentials\n"
+    " - Sign in as a business administrator\n"
+    " - Revoke admin access when needed\n\n"
+    "All actions are secured and enforced by Trustware infrastructure."
+)
         admin_mgmt_layout.addWidget(self.admin_mgmt_report, 1)
 
         admin_mgmt_actions = QHBoxLayout()
@@ -2308,7 +2340,7 @@ class BusinessHubDialog(QDialog):
         admin_layout.addWidget(admin_subtitle)
 
         admin_actions = QHBoxLayout()
-        self.btn_admin_live_view = QPushButton("Live View")
+        self.btn_admin_live_view = QPushButton("Refresh")
         
         for b in (
             self.btn_admin_live_view,
@@ -2450,7 +2482,6 @@ class BusinessHubDialog(QDialog):
         self.btn_reassign_local_identity.clicked.connect(self._reset_or_reassign_local_seat_identity)
         self.btn_run_seat_health.clicked.connect(self._run_selected_seat_health_check)
         self.btn_remove_manual_seat.clicked.connect(self._revoke_seat_from_dialog)
-        self.btn_force_backup_seat.clicked.connect(self._force_backup_selected_seat)
         self.btn_admin_live_view.clicked.connect(self._show_admin_live_view)
         self.btn_view_historical_seats.clicked.connect(self._show_historical_seat_records)
         self.btn_view_historical_invites.clicked.connect(self._show_historical_invites)
@@ -2827,7 +2858,6 @@ class BusinessHubDialog(QDialog):
             "Business NAS target updated successfully. DevVault will now restart to refresh vault authority and runtime state."
         )
 
-
     def _login_business_nas_credentials(self) -> None:
         candidate = self.txt_nas_manual.text().strip()
 
@@ -3195,8 +3225,6 @@ class BusinessHubDialog(QDialog):
             f"border:{border_width}px solid {color};"
         )
 
-
-
     def _build_seat_status_summary_text(
         self,
         *,
@@ -3291,8 +3319,6 @@ class BusinessHubDialog(QDialog):
 
         return "\n".join(lines)
 
-
-
     def _dashboard_status_for_seat(
         self,
         *,
@@ -3301,55 +3327,72 @@ class BusinessHubDialog(QDialog):
         assigned_hostname: str = "",
         latest_snapshot_at: str = "",
         nas_reachable: bool,
+        status_code: str = "",
+        status_detail: str = "",
+        unprotected_count: int | None = None,
+        findings_summary: dict | None = None,
+        protection: dict | None = None,
+        seat_freshness: str = "",
     ) -> str:
-        seat_id = str(seat_id or "").strip()
-        seat_label = str(seat_label or "").strip()
-        assigned_hostname = str(assigned_hostname or "").strip()
-        latest_snapshot_at = str(latest_snapshot_at or "").strip()
+        findings_summary = findings_summary or {}
+        protection = protection or {}
 
-        if not nas_reachable:
-            return "Unreachable"
+        # PRIORITY 1 — heartbeat findings
+        count = findings_summary.get("unprotected_count")
 
-        try:
-            local_identity = get_business_seat_identity()
-        except Exception:
-            local_identity = None
-
-        local_seat_id = ""
-        if isinstance(local_identity, dict):
-            local_seat_id = str(local_identity.get("seat_id") or "").strip()
-
-        if local_seat_id and seat_id == local_seat_id:
+        if count is not None:
             try:
-                banner = str(self.parent().protection_status_label.text() or "").strip().upper()
+                count = int(count)
+                if count > 0:
+                    return f"ATTENTION REQUIRED — {count} unprotected item(s). Run Backup to secure them."
+                return "PROTECTED — no unprotected items."
             except Exception:
-                banner = ""
+                pass
 
-            if "UNPROTECTED" in banner:
-                try:
-                    msg = str(self.parent().protection_status_message.text() or "").strip()
-                except Exception:
-                    msg = ""
-                return f"Unprotected — {msg}" if msg else "Unprotected"
-
-            if "PROTECTED" in banner:
-                return "Protected"
-
-        if not latest_snapshot_at:
-            return "Never backed up"
+        # PRIORITY 2 — normalized live protection payloads
+        if unprotected_count is not None:
+            try:
+                count = int(unprotected_count)
+                if count > 0:
+                    return f"ATTENTION REQUIRED — {count} unprotected item(s). Run Backup to secure them."
+                return "PROTECTED — no unprotected items."
+            except Exception:
+                pass
 
         try:
-            from datetime import datetime, timezone
-            created_dt = datetime.fromisoformat(latest_snapshot_at)
-            if created_dt.tzinfo is None:
-                created_dt = created_dt.replace(tzinfo=timezone.utc)
-            age_seconds = (datetime.now(timezone.utc) - created_dt).total_seconds()
-            if age_seconds > (72 * 3600):
-                return "Unprotected"
+            count = protection.get("unprotected_count")
+            if count is not None:
+                count = int(count)
+                if count > 0:
+                    return f"ATTENTION REQUIRED — {count} unprotected item(s). Run Backup to secure them."
+                return "PROTECTED — no unprotected items."
         except Exception:
             pass
 
-        return "Protected"
+        # PRIORITY 3 — freshness / server status
+        freshness = str(seat_freshness or "").strip().lower()
+        if freshness == "online":
+            return "ONLINE — live heartbeat received."
+        if freshness == "stale":
+            return "STALE — heartbeat aging."
+        if freshness == "offline":
+            return "OFFLINE — no recent heartbeat."
+
+        code = str(status_code or "").strip().lower()
+        detail = str(status_detail or "").strip()
+        if code:
+            if detail:
+                return f"{code.upper()} — {detail}"
+            return code.upper()
+
+        # FALLBACK — snapshot
+        if latest_snapshot_at:
+            return "PROTECTED TO NAS — snapshot detected (fallback)."
+
+        if not nas_reachable:
+            return "UNREACHABLE — Business NAS path is not reachable."
+
+        return "UNKNOWN — No seat protection status returned by server."
 
     def _refresh_dashboard_seat_status_board(self) -> None:
         try:
@@ -3369,6 +3412,21 @@ class BusinessHubDialog(QDialog):
             if str(getattr(row, "seat_status", "") or "").strip().lower() in active_statuses
         ]
 
+        snapshot = {}
+        per_seat_unprotected_counts = {}
+        try:
+            parent = self.parent()
+            if parent is not None and hasattr(parent, "_dashboard_snapshot"):
+                snapshot = parent._dashboard_snapshot() or {}
+                raw_counts = snapshot.get("per_seat_unprotected_counts") or {}
+                if isinstance(raw_counts, dict):
+                    per_seat_unprotected_counts = {
+                        str(k).strip(): v for k, v in raw_counts.items() if str(k).strip()
+                    }
+        except Exception:
+            snapshot = {}
+            per_seat_unprotected_counts = {}
+
         try:
             nas_path = str(get_business_nas_path() or "").strip()
         except Exception:
@@ -3382,6 +3440,7 @@ class BusinessHubDialog(QDialog):
                 nas_reachable = False
 
         latest_by_seat = {}
+        fleet_status_by_seat = {}
         if nas_reachable:
             try:
                 import json
@@ -3400,6 +3459,10 @@ class BusinessHubDialog(QDialog):
                             latest_by_seat[seat_id] = created_at
             except Exception:
                 pass
+            try:
+                fleet_status_by_seat = load_business_fleet_status_map(nas_path)
+            except Exception:
+                fleet_status_by_seat = {}
 
         lines = [
             "SEAT STATUS OVERVIEW",
@@ -3416,12 +3479,76 @@ class BusinessHubDialog(QDialog):
                 hostname = str(getattr(row, "assigned_hostname", "") or "").strip()
                 latest_snapshot_at = str(latest_by_seat.get(seat_id, "") or "").strip()
 
-                status = self._dashboard_status_for_seat(
+                seat_unprotected_count = None
+                fleet_status = {}
+                try:
+                    protection = getattr(row, "protection", None) or {}
+                    findings_summary = getattr(row, "findings_summary", None) or {}
+                    fleet_status = fleet_status_by_seat.get(seat_id, {}) or {}
+
+                    if isinstance(protection, dict):
+                        raw = protection.get("unprotected_count")
+                        if raw is None:
+                            raw = protection.get("uncovered_count")
+                        if raw is not None:
+                            seat_unprotected_count = int(raw)
+
+                    if seat_unprotected_count is None and isinstance(findings_summary, dict):
+                        raw = findings_summary.get("unprotected_count")
+                        if raw is None:
+                            raw = findings_summary.get("attention_count")
+                        if raw is not None:
+                            seat_unprotected_count = int(raw)
+
+                    if seat_unprotected_count is None and seat_id in per_seat_unprotected_counts:
+                        seat_unprotected_count = int(per_seat_unprotected_counts.get(seat_id))
+
+                    if seat_unprotected_count is None and isinstance(fleet_status, dict):
+                        raw = fleet_status.get("unprotected_count")
+                        if raw is not None:
+                            seat_unprotected_count = int(raw)
+                except Exception:
+                    seat_unprotected_count = None
+
+                live_status = ""
+                try:
+                    fleet_status_name = str((fleet_status or {}).get("status") or "").strip().lower()
+                    fleet_status_message = str((fleet_status or {}).get("status_message") or "").strip()
+                    seat_freshness = str(getattr(row, "seat_freshness", "") or "").strip().lower()
+
+                    if fleet_status_name == "attention_required" and seat_unprotected_count is not None and seat_unprotected_count > 0:
+                        live_status = fleet_status_message or (
+                            f"ATTENTION REQUIRED — {seat_unprotected_count} unprotected item(s). Run Backup to secure them."
+                        )
+                    elif fleet_status_name == "protected" and seat_unprotected_count == 0:
+                        live_status = fleet_status_message or "PROTECTED — no unprotected items."
+                    elif seat_unprotected_count is not None:
+                        if seat_unprotected_count <= 0:
+                            live_status = "PROTECTED — 0 unprotected items."
+                        else:
+                            noun = "item" if seat_unprotected_count == 1 else "items"
+                            live_status = f"ATTENTION REQUIRED — {seat_unprotected_count} unprotected {noun}. Run Backup to secure them."
+                    elif seat_freshness == "online":
+                        live_status = "ONLINE — live heartbeat received. Unprotected-item count unavailable."
+                    elif seat_freshness == "stale":
+                        live_status = "STALE — heartbeat aging. Live unprotected-item count unavailable."
+                    elif seat_freshness == "offline":
+                        live_status = "OFFLINE — no recent heartbeat."
+                except Exception:
+                    live_status = ""
+
+                status = live_status or self._dashboard_status_for_seat(
                     seat_id=seat_id,
                     seat_label=seat_label,
                     assigned_hostname=hostname,
                     latest_snapshot_at=latest_snapshot_at,
                     nas_reachable=nas_reachable,
+                    status_code=str(getattr(row, "status_code", "") or "").strip(),
+                    status_detail="",  # disabled: prevents cross-seat leakage
+                    unprotected_count=seat_unprotected_count,
+                    findings_summary=getattr(row, "findings_summary", None),
+                    protection=getattr(row, "protection", None),
+                    seat_freshness=getattr(row, "seat_freshness", ""),
                 )
 
                 left = seat_label or seat_id or "Unknown Seat"
@@ -3741,7 +3868,6 @@ class BusinessHubDialog(QDialog):
             )
 
         return "\n".join(lines)
-
 
     def _business_fleet_id_from_payload(self, api_payload: dict) -> str:
         return str(
@@ -4233,7 +4359,6 @@ class BusinessHubDialog(QDialog):
                 QMessageBox.StandardButton.Ok,
                 QMessageBox.Icon.Critical,
             )
-
 
     def _update_seat_management_capacity_state(
         self,
@@ -5032,9 +5157,6 @@ class BusinessHubDialog(QDialog):
                                 vault_evidence=_collect_vault_evidence_summary(),
                 fingerprint_hash=_compute_device_fingerprint(),
 
-
-
-
             )
 
             self._refresh_seat_management_surface()
@@ -5124,7 +5246,6 @@ class BusinessHubDialog(QDialog):
                 QMessageBox.StandardButton.Ok,
                 QMessageBox.Icon.Critical,
             )
-
 
     def _set_admin_password_for_seat(self) -> None:
         if not self.parent()._require_action_entitlement(
@@ -5417,7 +5538,6 @@ class BusinessHubDialog(QDialog):
                 QMessageBox.Icon.Critical,
             )
 
-
     def _issue_admin_login_token_for_selected_seat(self) -> None:
         if not self.parent()._require_action_entitlement(
             "biz_seat_admin_tools",
@@ -5505,7 +5625,6 @@ class BusinessHubDialog(QDialog):
 
         except Exception as e:
             _centered_message(self, "Issue Admin Login Token", f"Failed:\n\n{e}", QMessageBox.Ok)
-
 
     def _show_one_time_admin_login_token_dialog(self, result: dict) -> None:
         seat_token = str(result.get("seat_token") or "").strip()
@@ -5647,70 +5766,6 @@ class BusinessHubDialog(QDialog):
             choices.append((label, row.seat_id))
 
         return choices
-
-    
-
-    def _force_backup_selected_seat(self) -> None:
-        try:
-            parent = self.parent()
-            if parent is None:
-                raise RuntimeError("Business console parent is unavailable.")
-
-            seat_choices = self._active_server_seat_choices()
-
-            if not seat_choices:
-                _centered_message(
-                    self,
-                    "Force Backup",
-                    "There are no active server seats available.",
-                )
-                return
-
-            labels = [str(label or "").strip() for label, _seat_id in seat_choices]
-            seat_map = {str(label or "").strip(): str(seat_id or "").strip() for label, seat_id in seat_choices}
-
-            selected_label, ok = QInputDialog.getItem(
-                self,
-                "Force Backup",
-                "Select an active server seat to force backup:",
-                labels,
-                0,
-                False,
-            )
-
-            if not ok or not str(selected_label or "").strip():
-                return
-
-            selected_seat_id = seat_map.get(str(selected_label).strip(), "").strip()
-            if not selected_seat_id:
-                _centered_message(
-                    self,
-                    "Force Backup",
-                    "Could not resolve the selected seat.",
-                )
-                return
-
-            ok_result = bool(parent._force_backup_business_seat(selected_seat_id))
-            try:
-                if ok_result:
-                    self.lbl_last_action_status.setText(f"Last Action: SUCCESS | Seat: {selected_seat_id}")
-                else:
-                    self.lbl_last_action_status.setText(f"Last Action: FAILED | Seat: {selected_seat_id}")
-            except Exception:
-                pass
-
-        except Exception as e:
-            _centered_message(
-                self,
-                "Force Backup",
-                f"Error:\n{e}",
-            )
-            return False
-        finally:
-            try:
-                self.btn_force_backup_seat.setEnabled(True)
-            except Exception:
-                pass
 
     def _revoke_seat_from_dialog(self) -> None:
         try:
@@ -5925,59 +5980,13 @@ class BusinessHubDialog(QDialog):
             details.setPlainText(report_text)
             root.addWidget(details, 1)
 
-            lbl_command_status = QLabel("Last Command: None\nStatus: Idle", dlg)
+            lbl_command_status = QLabel("\n", dlg)
             lbl_command_status.setWordWrap(True)
             lbl_command_status.setStyleSheet("color:#8fd3ff;padding:4px 0 6px 0;")
             root.addWidget(lbl_command_status)
 
             btn_row = QHBoxLayout()
 
-            btn_force_backup = QPushButton("Force Backup Now", dlg)
-            btn_force_backup.setMinimumWidth(160)
-
-            def _force_backup():
-                try:
-                    from datetime import datetime, timezone
-
-                    issued_at = datetime.now(timezone.utc).isoformat()
-
-                    self.parent().append_log(
-                        f"Force backup command queued for seat {normalized_seat_id} at {issued_at}"
-                    )
-
-                    try:
-                        lbl_command_status.setText(
-                            "Last Command: Force Backup Requested — "
-                            + issued_at
-                            + "\nStatus: Pending"
-                        )
-                        lbl_command_status.setStyleSheet("color:#f5c400;padding:4px 0 6px 0;")
-                    except Exception:
-                        pass
-
-                    _centered_message(
-                        self,
-                        "Force Backup",
-                        f"Backup request queued for seat '{normalized_seat_id}'.\n\n"
-                        "Device will execute backup when online.",
-                    )
-                except Exception as e:
-                    try:
-                        lbl_command_status.setText(
-                            "Last Command: Force Backup Requested\nStatus: Failed to queue"
-                        )
-                        lbl_command_status.setStyleSheet("color:#ff8a8a;padding:4px 0 6px 0;")
-                    except Exception:
-                        pass
-
-                    _centered_message(
-                        self,
-                        "Force Backup Error",
-                        str(e),
-                    )
-
-            btn_force_backup.clicked.connect(_force_backup)
-            btn_row.addWidget(btn_force_backup)
             btn_row.addStretch(1)
 
             btn_close = QPushButton("Close", dlg)
@@ -6059,7 +6068,6 @@ class BusinessHubDialog(QDialog):
         y = (self.height() - pm.height()) // 2 + 10
         self.watermark.setGeometry(x, y, pm.width(), pm.height())
 
-
 class DevVaultQt(QMainWindow):
     _business_nas_required = False
 
@@ -6071,8 +6079,6 @@ class DevVaultQt(QMainWindow):
     def open_snapshot_comparison(self):
         from devvault_desktop.reporting import open_snapshot_comparison_ui
         open_snapshot_comparison_ui(parent=self)
-
-
 
     
     def _restart_devvault_app(self) -> None:
@@ -6167,7 +6173,6 @@ class DevVaultQt(QMainWindow):
         self._force_restart_for_runtime_refresh(
             "Business NAS vault initialized. DevVault will now restart to load vault authority."
         )
-
 
     def _seat_activation_bootstrap(self) -> None:
         try:
@@ -6546,15 +6551,110 @@ class DevVaultQt(QMainWindow):
                 api_payload = {}
 
             attention_seats: list[str] = []
+            per_seat_unprotected_counts: dict[str, int] = {}
+
+            def _coerce_int(value):
+                try:
+                    if value in (None, "", "?", "n/a"):
+                        return None
+                    return int(value)
+                except Exception:
+                    return None
+
+            def _extract_unprotected_count_from_finding(finding):
+                try:
+                    import re
+                except Exception:
+                    re = None
+
+                candidate_values = []
+
+                def _pull_from_mapping(mapping):
+                    if not isinstance(mapping, dict):
+                        return
+                    for key_name in (
+                        "unprotected_count",
+                        "count",
+                        "uncovered_count",
+                        "degraded_count",
+                        "value",
+                    ):
+                        if key_name in mapping:
+                            candidate_values.append(mapping.get(key_name))
+                    for nested_name in ("details", "data", "payload", "meta", "metadata", "context"):
+                        nested = mapping.get(nested_name)
+                        if isinstance(nested, dict):
+                            _pull_from_mapping(nested)
+
+                if isinstance(finding, dict):
+                    _pull_from_mapping(finding)
+                    for field_name in ("message", "detail", "summary", "text"):
+                        if field_name in finding:
+                            candidate_values.append(finding.get(field_name))
+                else:
+                    for attr_name in (
+                        "unprotected_count",
+                        "count",
+                        "uncovered_count",
+                        "degraded_count",
+                        "value",
+                        "message",
+                        "detail",
+                        "summary",
+                        "text",
+                    ):
+                        try:
+                            candidate_values.append(getattr(finding, attr_name, None))
+                        except Exception:
+                            pass
+                    for nested_name in ("details", "data", "payload", "meta", "metadata", "context"):
+                        try:
+                            nested = getattr(finding, nested_name, None)
+                        except Exception:
+                            nested = None
+                        if isinstance(nested, dict):
+                            _pull_from_mapping(nested)
+
+                for value in candidate_values:
+                    n = _coerce_int(value)
+                    if n is not None:
+                        return max(0, n)
+
+                if re is not None:
+                    for value in candidate_values:
+                        text = str(value or "").strip()
+                        if not text:
+                            continue
+                        m = re.search(r"(\d+)\s+unprotected", text, re.IGNORECASE)
+                        if m:
+                            return max(0, int(m.group(1)))
+
+                return None
+
             try:
                 for finding in tuple(getattr(seat_result, "findings", ()) or ()):
                     key = str(getattr(finding, "key", "") or "").strip()
-                    if key.startswith("seat_degraded:") or key.startswith("seat_never:") or key.startswith("seat_unknown:"):
+                    if not key:
+                        continue
+
+                    if key.startswith("seat_degraded:"):
+                        seat_id = key.split(":", 1)[1].strip()
+                        if seat_id:
+                            if seat_id not in attention_seats:
+                                attention_seats.append(seat_id)
+                            extracted = _extract_unprotected_count_from_finding(finding)
+                            if extracted is not None:
+                                prior = _coerce_int(per_seat_unprotected_counts.get(seat_id))
+                                if prior is None or extracted > prior:
+                                    per_seat_unprotected_counts[seat_id] = extracted
+
+                    elif key.startswith("seat_never:") or key.startswith("seat_unknown:"):
                         seat_id = key.split(":", 1)[1].strip()
                         if seat_id and seat_id not in attention_seats:
                             attention_seats.append(seat_id)
             except Exception:
                 attention_seats = []
+                per_seat_unprotected_counts = {}
 
             nas_path = ""
             nas_name = "Not configured"
@@ -6619,6 +6719,7 @@ class DevVaultQt(QMainWindow):
                     + int(seat_raw.get("unknown", 0) or 0)
                 ),
                 "attention_seats": tuple(attention_seats),
+                "per_seat_unprotected_counts": dict(per_seat_unprotected_counts),
                 "nas_name": nas_name,
                 "nas_path": nas_path,
                 "nas_free_pct": nas_free_pct,
@@ -6667,7 +6768,6 @@ class DevVaultQt(QMainWindow):
 
         if persisted_business_nas:
             self.vault_path = persisted_business_nas
-
 
         if not self.vault_path:
             drives = self._available_drive_roots()
@@ -6779,7 +6879,6 @@ class DevVaultQt(QMainWindow):
             }}
             """
         )
-
 
         main = QVBoxLayout(root)
         main.setContentsMargins(40, 30, 40, 30)
@@ -6964,7 +7063,6 @@ class DevVaultQt(QMainWindow):
         self.btn_validate_license.clicked.connect(self.validate_license_now)
 
         main.addLayout(row)
-
 
         self.btn_backup.setFocus()
         # Log box (green terminal style)
@@ -7395,7 +7493,6 @@ class DevVaultQt(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
 
-
         container = QWidget()
         container.setObjectName("setup_scroll_container")
         container.setStyleSheet("""
@@ -7556,10 +7653,6 @@ class DevVaultQt(QMainWindow):
         self.txt_setup_invite_email.setPlaceholderText("Invite email (must match the invite)")
         seat_layout.addWidget(self.txt_setup_invite_email)
 
-        self.txt_setup_invite_token = QLineEdit(self._setup_business_seat_fields)
-        self.txt_setup_invite_token.setPlaceholderText("Invite token")
-        seat_layout.addWidget(self.txt_setup_invite_token)
-
         self.btn_setup_activate_seat = QPushButton("Activate Seat", self._setup_business_seat_fields)
         self.btn_setup_activate_seat.setObjectName("setup_primary_button")
         self.btn_setup_activate_seat.clicked.connect(self._setup_activate_seat)
@@ -7670,10 +7763,6 @@ class DevVaultQt(QMainWindow):
             invite_email = str(self.txt_setup_invite_email.text() or "").strip()
             if not invite_email:
                 raise RuntimeError("Invite email is required.")
-
-            invite_token = str(self.txt_setup_invite_token.text() or "").strip()
-            if not invite_token:
-                raise RuntimeError("Invite token is required.")
 
             import socket
 
@@ -7995,18 +8084,6 @@ class DevVaultQt(QMainWindow):
             )
             return
 
-        try:
-            _centered_message(
-                self,
-                "DEBUG Owner Login Result",
-                str(result),
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.Icon.Information,
-            )
-        except Exception:
-            pass
-
         self._setup_owner_store_session(result)
 
         password_reset_required = bool(result.get("password_reset_required"))
@@ -8236,7 +8313,6 @@ class DevVaultQt(QMainWindow):
                 self.append_log(f"Auto seat enrollment failed: {e}")
             except Exception:
                 pass
-
 
         try:
             self._sync_setup_panel_fields()
@@ -8587,7 +8663,6 @@ class DevVaultQt(QMainWindow):
             self.tray_icon.setIcon(self._make_tinted_icon("#facc15"))
             self._update_tray_status_text("Checking protection status...")
 
-
     def _resolve_business_protection_banner_state(self) -> dict | None:
         try:
             if not self._business_nas_mode_active():
@@ -8690,20 +8765,46 @@ class DevVaultQt(QMainWindow):
         self._unprotected_count = max(0, int(count or 0))
         if self._unprotected_count > 0:
             self._protection_state = "UNPROTECTED"
-            self.protection_status_label.setText("STATUS: UNPROTECTED")
+            self.protection_status_label.setText("STATUS: ATTENTION REQUIRED")
             self.protection_status_label.setStyleSheet("color: #fb923c;")
             noun = "item" if self._unprotected_count == 1 else "items"
             self.protection_status_message.setText(
-                f"{self._unprotected_count} new {noun} detected — backup recommended."
+                f"{self._unprotected_count} unprotected {noun}. Run Backup to secure them."
             )
             self._set_tray_state("unprotected")
         else:
             self._protection_state = "PROTECTED"
             self.protection_status_label.setText("STATUS: PROTECTED")
             self.protection_status_label.setStyleSheet("color: #22c55e;")
-            self.protection_status_message.setText("All detected work is protected.")
+            self.protection_status_message.setText("All detected work is protected. No action needed.")
             self._set_tray_state("protected")
 
+        try:
+            record_business_protection_state(
+                unprotected_count=self._unprotected_count,
+                status_message=str(self.protection_status_message.text() or "").strip(),
+            )
+        except Exception as e:
+            self.append_log(f"Warning: could not update Business protection state: {e}")
+
+        try:
+            seat_identity = get_business_seat_identity() or {}
+            publish_business_fleet_status(
+                nas_path=str(get_business_nas_path() or "").strip(),
+                seat_id=str(seat_identity.get("seat_id") or "").strip(),
+                assigned_hostname=str(
+                    seat_identity.get("assigned_hostname")
+                    or seat_identity.get("assigned_device_id")
+                    or ""
+                ).strip(),
+                seat_label=str(seat_identity.get("seat_label") or "").strip(),
+                status="attention_required" if self._unprotected_count > 0 else "protected",
+                status_message=str(self.protection_status_message.text() or "").strip(),
+                unprotected_count=self._unprotected_count,
+                last_local_update_at=datetime.now(timezone.utc).isoformat(),
+            )
+        except Exception as e:
+            self.append_log(f"Warning: could not publish fleet protection state: {e}")
 
     def _cleanup_startup_scan_thread(self) -> None:
         self._startup_scan_worker = None
@@ -8761,8 +8862,15 @@ class DevVaultQt(QMainWindow):
             self.append_log(f"Warning: could not update reminder state: {e}")
         try:
             if uncovered:
+                self.protection_status_label.setText("STATUS: ATTENTION REQUIRED")
+                self.protection_status_message.setText(
+                    f"{len(uncovered)} unprotected item(s) detected. Run Backup to secure them."
+                )
                 self.append_log(f"Startup protection check: {len(uncovered)} unprotected item(s) detected.")
+                QTimer.singleShot(500, self.run_scan)
             else:
+                self.protection_status_label.setText("STATUS: PROTECTED")
+                self.protection_status_message.setText("All detected work is protected. No action needed.")
                 self.append_log("Startup protection check: all detected work is protected.")
         except Exception:
             pass
@@ -8922,8 +9030,6 @@ class DevVaultQt(QMainWindow):
 
     def _run_startup_validation_if_due(self) -> None:
 
-
-
         try:
             st = check_license()
         except Exception as e:
@@ -9008,8 +9114,8 @@ class DevVaultQt(QMainWindow):
                 self,
                 "License Installed",
                 (
-                    f"License installed successfully.\\n\\n"
-                    f"Licensed to: {claims.licensee}\\n"
+                    f"License installed successfully.\n\n"
+                    f"Licensed to: {claims.licensee}\n"
                     f"Installed at: {dest}"
                 ),
             )
@@ -9022,7 +9128,6 @@ class DevVaultQt(QMainWindow):
             pass
 
         return True
-
 
     
 
@@ -9350,7 +9455,6 @@ class DevVaultQt(QMainWindow):
         self.btn_restore.setEnabled(not busy)
         self.btn_scan.setEnabled(not busy)
 
-
     def _cleanup_new_snapshots(self) -> None:
         """
         Best-effort: after operator cancel, remove any snapshot dirs created during THIS execute run.
@@ -9430,7 +9534,6 @@ class DevVaultQt(QMainWindow):
 
         self._op_cancel_handler = _do_cancel
 
-
     
     def _op_bind_cancel_execute(self) -> None:
         # Launch-grade cancel lifecycle — instant UI release
@@ -9469,7 +9572,6 @@ class DevVaultQt(QMainWindow):
                 pass
 
         self._op_cancel_handler = _do_cancel
-
 
     def _on_op_cancel(self) -> None:
         # Single permanent cancel route for the operation overlay.
@@ -9545,8 +9647,6 @@ class DevVaultQt(QMainWindow):
         self._backup_exec = None
         self._backup_exec_thread = None
 
-
-
     def _start_next_queued_backup(self) -> bool:
         try:
             self._enforce_business_nas_backup_requirement()
@@ -9614,6 +9714,11 @@ class DevVaultQt(QMainWindow):
             mark_protected()
         except Exception as e:
             self.append_log(f"Warning: could not update reminder state: {e}")
+
+        try:
+            self._update_protection_status(0)
+        except Exception as e:
+            self.append_log(f"Warning: could not refresh protection status after backup: {e}")
 
         self.append_log("Backup complete.")
         self.append_log(f"Result: {payload}")
@@ -9760,7 +9865,6 @@ class DevVaultQt(QMainWindow):
             pass
 
         self._set_busy(False)
-
 
     def _cleanup_scan_thread(self) -> None:
         self._scan_worker = None
@@ -9942,23 +10046,30 @@ class DevVaultQt(QMainWindow):
         self._op_bind_cancel_scan()
 
         try:
-            self._op_show(
-                "Scanning your workspaces",
-                "Scan in progress",
-                [
-                    "DevVault is reviewing this PC for unprotected work.",
-                    "Large scans may take a moment.",
-                    "System locations are filtered from results.",
-                ],
-                allow_cancel=True,
-            )
-        except Exception:
-            pass
+            if self.isVisible():
+                self._op_show(
+                    "Scanning your workspaces",
+                    "Scan in progress",
+                    [
+                        "DevVault is reviewing this PC for unprotected work.",
+                        "Large scans may take a moment.",
+                        "System locations are filtered from results.",
+                    ],
+                    allow_cancel=True,
+                )
+        except Exception as e:
+            self.append_log(f"run_scan warning: {e}")
 
         QApplication.processEvents()
 
         self.append_log("Checking for uncovered projects...")
         self._set_busy(True)
+
+        # prevent duplicate scan threads
+        if hasattr(self, "_scan_thread") and self._scan_thread is not None:
+            if self._scan_thread.isRunning():
+                self.append_log("Scan already running.")
+                return
 
         self._scan_thread = QThread()
         business_mode = False
@@ -9981,15 +10092,21 @@ class DevVaultQt(QMainWindow):
         self._scan_worker.moveToThread(self._scan_thread)
 
         self._scan_thread.started.connect(self._scan_worker.run)
-        self._scan_worker.log.connect(self.append_log)
+        self._scan_worker.log.connect(self.append_log, type=Qt.QueuedConnection)
         self._scan_worker.done.connect(self._on_scan_done, type=Qt.QueuedConnection)
+        self._scan_worker.done.connect(self._scan_thread.quit, type=Qt.QueuedConnection)
         self._scan_worker.error.connect(self._on_scan_err, type=Qt.QueuedConnection)
+        self._scan_worker.error.connect(self._scan_thread.quit, type=Qt.QueuedConnection)
 
         self._scan_thread.finished.connect(self._scan_worker.deleteLater)
         self._scan_thread.finished.connect(self._scan_thread.deleteLater)
         self._scan_thread.finished.connect(self._cleanup_scan_thread, type=Qt.QueuedConnection)
+        self._scan_thread.finished.connect(lambda: setattr(self, "_scan_thread", None))
+        self._scan_thread.finished.connect(lambda: setattr(self, "_scan_worker", None))
 
-        self._scan_thread.start()
+        # safe start guard
+        if not self._scan_thread.isRunning():
+            self._scan_thread.start()
 
     def _on_scan_done(self, payload: dict) -> None:
         if bool(getattr(self, "_scan_cancelled", False)):
@@ -10194,8 +10311,6 @@ class DevVaultQt(QMainWindow):
         self._install_license_file(Path(file_path))
         QTimer.singleShot(0, self._sync_setup_panel_state)
 
-
-
     
     def _current_business_admin_session(self) -> dict | None:
         session = getattr(self, "_business_admin_session", None)
@@ -10346,113 +10461,10 @@ class DevVaultQt(QMainWindow):
             "Your Business admin session expired. Please sign in again.",
         )
 
-
     def _clear_business_admin_session(self) -> None:
         self._business_admin_session = None
         self._last_admin_reset_password = ""
         self._stop_business_admin_session_watchdog()
-
-    
-    
-    def _force_backup_business_seat(self, target_seat_id: str) -> None:
-        try:
-            self.btn_force_backup_seat.setEnabled(False)
-        except Exception:
-            pass
-
-        seat_id = str(target_seat_id or "").strip()
-        if not seat_id:
-            _centered_message(
-                self,
-                "Force Backup",
-                "Missing target seat ID.",
-            )
-            return
-
-        session = getattr(self, "_business_admin_session", None) or {}
-        token = str(session.get("admin_session_token") or "").strip()
-        role = str(session.get("role") or "").strip().lower()
-
-        if role not in {"owner", "admin"}:
-            _centered_message(
-                self,
-                "Force Backup",
-                "Only owner or admin accounts can force seat backups.",
-            )
-            return
-
-        if not token:
-            _centered_message(
-                self,
-                "Force Backup",
-                "No active admin session token found.",
-            )
-            return
-
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Force Backup",
-            f"Issue a forced backup for seat:\n\n{seat_id} ?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
-
-        if confirm != QMessageBox.Yes:
-            return
-
-        try:
-            api_data = force_backup_business_admin_target_seat(
-                target_seat_id=seat_id,
-                admin_session_token=token,
-            )
-
-            result = str(api_data.get("result") or "").strip().lower()
-            action_id = str(api_data.get("action_id") or "").strip()
-
-            if result == "force_backup_issued":
-                _centered_message(
-                    self,
-                    "Force Backup",
-                    "Forced backup issued successfully.\n\n"
-                    f"Seat ID: {seat_id}\n"
-                    f"Action ID: {action_id or 'n/a'}",
-                )
-
-                try:
-                    self.lbl_last_action_status.setText(f"Last Action: SUCCESS | Seat: {seat_id}")
-                    try:
-                        dlg = getattr(self, "_business_hub_dialog", None)
-                        if dlg is not None and hasattr(dlg, "lbl_last_action_status"):
-                            dlg.lbl_last_action_status.setText(f"Last Action: SUCCESS | Seat: {seat_id}")
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-                return True
-            else:
-                _centered_message(
-                    self,
-                    "Force Backup",
-                    f"Failed to issue forced backup.\n\nResult: {result or 'unknown'}",
-                )
-                try:
-                    self.lbl_last_action_status.setText(f"Last Action: FAILED | Result: {result or 'unknown'}")
-                    try:
-                        dlg = getattr(self, "_business_hub_dialog", None)
-                        if dlg is not None and hasattr(dlg, "lbl_last_action_status"):
-                            dlg.lbl_last_action_status.setText(f"Last Action: FAILED | Result: {result or 'unknown'}")
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-                return False
-
-        except Exception as e:
-            _centered_message(
-                self,
-                "Force Backup",
-                f"Error:\n{e}",
-            )
-
     def _revoke_admin_account(self) -> None:
         import urllib.request
         import urllib.error
@@ -10585,7 +10597,6 @@ class DevVaultQt(QMainWindow):
                 f"Error:\n{e}",
             )
 
-
     def _business_admin_sign_in(self) -> None:
         dlg = QDialog(self)
         dlg.setWindowTitle("Business Admin Sign In")
@@ -10595,7 +10606,7 @@ class DevVaultQt(QMainWindow):
 
         layout = QVBoxLayout(dlg)
 
-        lbl_intro = QLabel("Sign in using your admin email/password or a one-time seat login token.")
+        lbl_intro = QLabel("Sign in using your admin email and password.")
         lbl_intro.setWordWrap(True)
         layout.addWidget(lbl_intro)
 
@@ -10607,10 +10618,6 @@ class DevVaultQt(QMainWindow):
         txt_password.setPlaceholderText("Password")
         txt_password.setEchoMode(QLineEdit.EchoMode.Password)
         layout.addWidget(txt_password)
-
-        txt_token = QLineEdit(dlg)
-        txt_token.setPlaceholderText("One-time seat token (optional)")
-        layout.addWidget(txt_token)
 
         btn_row = QHBoxLayout()
         btn_sign_in = QPushButton("Sign In", dlg)
@@ -10644,7 +10651,6 @@ class DevVaultQt(QMainWindow):
 
         email = str(txt_email.text() or "").strip().lower()
         password = str(txt_password.text() or "").strip()
-        seat_token = str(txt_token.text() or "").strip()
 
         if not email:
             _centered_message(
@@ -10658,7 +10664,7 @@ class DevVaultQt(QMainWindow):
             _centered_message(
                 self,
                 "Business Admin Sign In",
-                "Enter either a password or a one-time seat token.",
+                "Enter your admin password.",
             )
             return
 
@@ -10670,45 +10676,19 @@ class DevVaultQt(QMainWindow):
         device_id = hostname
 
         try:
-            if seat_token:
-                from inspect import signature
-
-                token_kwargs = {"seat_token": seat_token}
-                sig = signature(login_business_admin_with_seat_token)
-
-                if "email" in sig.parameters:
-                    token_kwargs["email"] = email
-                if "hostname" in sig.parameters:
-                    token_kwargs["hostname"] = hostname
-                if "device_id" in sig.parameters:
-                    token_kwargs["device_id"] = device_id
-                if "app_version" in sig.parameters:
-                    token_kwargs["app_version"] = _safe_app_version()
-
-                result = login_business_admin_with_seat_token(**token_kwargs)
-
-                # Normalize seat-token login response to match admin session contract
-                if isinstance(result, dict):
-                    if "seat_role" not in result:
-                        result["seat_role"] = "owner"
-                    if "seat_status" not in result:
-                        result["seat_status"] = "active"
-
-            else:
-                result = login_business_admin_with_password(
-                    email=email,
-                    password=password,
-                    hostname=hostname,
-                    device_id=device_id,
-                    app_version=_safe_app_version(),
-                )
+            result = login_business_admin_with_password(
+                email=email,
+                password=password,
+                hostname=hostname,
+                device_id=device_id,
+                app_version=_safe_app_version(),
+            )
         except BusinessSeatApiError as e:
             self._clear_business_admin_session()
-            mode_label = "seat token" if seat_token else "email/password"
             _centered_message(
                 self,
                 "Business Admin Sign In",
-                f"Could not sign in with {mode_label}.\n\n{e}",
+                "Invalid email or password. Please try again.",
             )
             return
         except Exception as e:
@@ -10726,26 +10706,15 @@ class DevVaultQt(QMainWindow):
             or result.get("seat_role")
             or ""
         ).strip().lower()
-        seat_status = str(result.get("seat_status") or "").strip().lower()
 
-        if seat_token:
-            if account_role not in {"owner", "admin"} or seat_status != "active":
-                self._clear_business_admin_session()
-                _centered_message(
-                    self,
-                    "Business Admin Sign In",
-                    "The provided seat token is not mapped to an active owner/admin seat.",
-                )
-                return
-        else:
-            if account_role not in {"owner", "admin"}:
-                self._clear_business_admin_session()
-                _centered_message(
-                    self,
-                    "Business Admin Sign In",
-                    "The provided credentials do not have owner/admin access.",
-                )
-                return
+        if account_role not in {"owner", "admin"}:
+            self._clear_business_admin_session()
+            _centered_message(
+                self,
+                "Business Admin Sign In",
+                "The provided credentials do not have owner/admin access.",
+            )
+            return
 
         session = dict(result)
 
@@ -10785,7 +10754,6 @@ class DevVaultQt(QMainWindow):
         global _GLOBAL_ADMIN_SESSION
         _GLOBAL_ADMIN_SESSION = session
 
-
         # --- CANONICAL SESSION AUTHORITY WRITE ---
         try:
             root = self
@@ -10801,7 +10769,6 @@ class DevVaultQt(QMainWindow):
 
         except Exception:
             pass
-
 
         try:
             parent = self.parent()
@@ -10973,8 +10940,6 @@ class DevVaultQt(QMainWindow):
         )
         return True
 
-
-
     def _refresh_local_seat_identity_status(self) -> None:
         try:
             identity = get_business_seat_identity()
@@ -11007,7 +10972,6 @@ class DevVaultQt(QMainWindow):
         ensure_business_runtime_config()
 
         # HARD SESSION REQUIREMENT (canonical gate)
-        print("DEBUG SESSION:", getattr(self, "_business_admin_session", None))
         if not self._business_admin_session_allowed():
             _centered_message(
                 self,
@@ -11113,7 +11077,6 @@ class DevVaultQt(QMainWindow):
 
         dlg.exec()
         return
-
 
     def open_pro_features(self) -> None:
         dlg = ProHubDialog(self)
@@ -11250,8 +11213,6 @@ class DevVaultQt(QMainWindow):
 
         dlg.exec()
 
-
-
     def _build_business_seat_protection_state_report_text(self) -> str:
         base_request = self._build_business_fetch_request()
         request = FetchRequest(
@@ -11335,11 +11296,6 @@ class DevVaultQt(QMainWindow):
         root.addLayout(btn_row)
 
         dlg.exec()
-
-
-
-
-
 
     def _normalize_business_report_text(
         self,
@@ -11633,7 +11589,6 @@ class DevVaultQt(QMainWindow):
 
         return "\n".join(lines)
 
-
     def _export_text_report(
         self,
         *,
@@ -11673,7 +11628,6 @@ class DevVaultQt(QMainWindow):
             Path(path).write_text(report_text, encoding="utf-8")
             _centered_message(self, "Export Complete", f"Markdown report saved:\n\n{path}")
             return
-
 
     def _export_advanced_scan_report(self, report: dict, fmt: str) -> None:
         if not self._require_action_entitlement(
@@ -11832,7 +11786,6 @@ class DevVaultQt(QMainWindow):
         dlg.exec()
 
     def validate_license_now(self) -> None:
-
 
         self.append_log("Manual license validation requested.")
         try:
@@ -12310,7 +12263,7 @@ class DevVaultQt(QMainWindow):
             from scanner.snapshot_listing import snapshot_storage_root
             from devvault_desktop.business_vault_authority import validate_business_vault_authority
 
-            authority = validate_business_vault_authority(vault_dir, mode="backup")
+            authority = validate_business_vault_authority(vault_dir, mode="restore")
             if not authority.ok:
                 _centered_message(self, "Restore Refused", authority.operator_message)
                 self.append_log(f"Restore refused: {authority.state.value}: {authority.operator_message}")
@@ -12342,7 +12295,6 @@ class DevVaultQt(QMainWindow):
                     except Exception:
                         continue
                 rows = filtered
-
 
             store_root = snapshot_storage_root(vault_dir)
         except Exception as e:
@@ -12433,7 +12385,6 @@ class DevVaultQt(QMainWindow):
                     return
         except Exception:
             pass
-
 
         # 2) Read snapshot metadata and derive restored folder name
         try:
@@ -12532,7 +12483,6 @@ class DevVaultQt(QMainWindow):
         self._restore_thread.started.connect(self._restore_worker.run)
         self._restore_worker.log.connect(self.append_log)
 
-
         self._restore_worker.done.connect(self._on_restore_done, type=Qt.QueuedConnection)
         self._restore_worker.error.connect(self._on_restore_err, type=Qt.QueuedConnection)
         self._restore_thread.finished.connect(self._restore_worker.deleteLater)
@@ -12554,8 +12504,6 @@ class DevVaultQt(QMainWindow):
             )
         except Exception:
             pass
-
-
 
 class _BackupPreflightWorker(QObject):
     log = Signal(str)
@@ -12591,7 +12539,6 @@ class _BackupPreflightWorker(QObject):
             self.done.emit(payload)
         except Exception as e:
             self.error.emit(str(e))
-
 
 class _BackupExecuteWorker(QObject):
     log = Signal(str)
@@ -12631,7 +12578,6 @@ class _BackupExecuteWorker(QObject):
         except Exception as e:
             self.error.emit(str(e))
 
-
 class _RestoreWorker(QObject):
     log = Signal(str)
     done = Signal(dict)
@@ -12669,7 +12615,6 @@ class _RestoreWorker(QObject):
             self.done.emit(result)
         except Exception as e:
             self.error.emit(str(e))
-
 
 class _ScanWorker(QObject):
     log = Signal(str)
@@ -12747,6 +12692,7 @@ class _ScanWorker(QObject):
             self.error.emit(str(e))
 
 def main() -> int:
+
     app = QApplication(sys.argv)
     win = DevVaultQt()
 
@@ -12771,122 +12717,4 @@ def main() -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# TODO: Section6 — Determine final placement for Force-Backup button
+# Force Backup removed for production

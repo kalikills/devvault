@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from devvault_desktop.business_fleet_status import publish_business_fleet_status
+from devvault_desktop.business_protection_state import load_business_protection_state
 from devvault_desktop.business_runtime_config import get_business_api_base_url, load_runtime
 
 
@@ -122,6 +124,7 @@ class WorkerConfig:
     customer_id: str
     assigned_device_id: str | None
     assigned_hostname: str | None
+    business_nas_path: str | None
     interval_seconds: int
     backup_cmd: str | None
 
@@ -131,6 +134,9 @@ class BusinessServiceWorker:
         self.cfg = cfg
         self.state_path = _state_path()
         self.state = load_json_file(self.state_path)
+        if not str(self.state.get("service_started_at") or "").strip():
+            self.state["service_started_at"] = utc_now_iso()
+            self.save_state()
 
     @classmethod
     def from_local_config(
@@ -159,6 +165,7 @@ class BusinessServiceWorker:
 
         assigned_device_id = str(identity.get("assigned_device_id") or "").strip() or None
         assigned_hostname = str(identity.get("assigned_hostname") or "").strip() or None
+        business_nas_path = str(((runtime.get("storage") or {}).get("nas_path")) or "").strip() or None
 
         return cls(
             WorkerConfig(
@@ -169,6 +176,7 @@ class BusinessServiceWorker:
                 customer_id=customer_id,
                 assigned_device_id=assigned_device_id,
                 assigned_hostname=assigned_hostname,
+                business_nas_path=business_nas_path,
                 interval_seconds=interval_seconds,
                 backup_cmd=backup_cmd,
             )
@@ -178,6 +186,13 @@ class BusinessServiceWorker:
         save_json_file(self.state_path, self.state)
 
     def heartbeat_payload(self) -> dict[str, Any]:
+        protection_state = load_business_protection_state()
+        unprotected_count = max(0, int(protection_state.get("unprotected_count", 0) or 0))
+        last_local_update_at = str(protection_state.get("last_local_update_at") or "").strip() or utc_now_iso()
+        protection_status = str(protection_state.get("status") or "").strip().lower()
+        if not protection_status:
+            protection_status = "attention_required" if unprotected_count > 0 else "protected"
+
         payload: dict[str, Any] = {
             "seat_id": self.cfg.seat_id,
             "fleet_id": self.cfg.fleet_id,
@@ -185,9 +200,31 @@ class BusinessServiceWorker:
             "customer_id": self.cfg.customer_id,
             "reported_at": utc_now_iso(),
             "hostname": socket.gethostname(),
+            "app_version": os.environ.get("DEVVAULT_APP_VERSION", "").strip(),
+            "sent_at": utc_now_iso(),
+            "service_started_at": str(self.state.get("service_started_at") or "").strip() or utc_now_iso(),
+            "last_local_update_at": last_local_update_at,
+            "presence": {
+                "worker_online": True,
+                "hostname": socket.gethostname(),
+            },
+            "protection": {
+                "status": protection_status,
+                "protected": unprotected_count <= 0,
+                "unprotected_count": unprotected_count,
+                "last_unprotected_detected_at": str(protection_state.get("last_unprotected_detected_at") or "").strip(),
+                "last_backup_completed_at": str(protection_state.get("last_backup_completed_at") or "").strip(),
+            },
+            "findings_summary": {
+                "attention_count": unprotected_count,
+                "unprotected_count": unprotected_count,
+                "status_message": str(protection_state.get("status_message") or "").strip(),
+            },
+            "command_state": {},
         }
         if self.cfg.assigned_device_id:
             payload["device_id"] = self.cfg.assigned_device_id
+            payload["assigned_device_id"] = self.cfg.assigned_device_id
         if self.cfg.assigned_hostname:
             payload["assigned_hostname"] = self.cfg.assigned_hostname
         return payload
@@ -195,12 +232,33 @@ class BusinessServiceWorker:
     def send_heartbeat(self) -> dict[str, Any]:
         url = f"{self.cfg.api_base_url}/api/business/fleet/seat-heartbeat"
         payload = self.heartbeat_payload()
+
         resp = request_json(method="POST", url=url, payload=payload)
+
         self.state["last_heartbeat_at"] = utc_now_iso()
         self.state["last_heartbeat_response"] = resp
         _log_worker_line("heartbeat_ok")
         self.save_state()
+
+        try:
+            protection_state = load_business_protection_state()
+            publish_business_fleet_status(
+                nas_path=str(self.cfg.business_nas_path or "").strip(),
+                seat_id=self.cfg.seat_id,
+                assigned_hostname=str(self.cfg.assigned_hostname or "").strip(),
+                seat_label=str(self.cfg.assigned_hostname or "").strip(),
+                status=str(protection_state.get("status") or "").strip().lower(),
+                status_message=str(protection_state.get("status_message") or "").strip(),
+                unprotected_count=int(protection_state.get("unprotected_count", 0) or 0),
+                last_local_update_at=str(protection_state.get("last_local_update_at") or "").strip(),
+            )
+        except Exception as exc:
+            self.state["last_fleet_status_publish_error_at"] = utc_now_iso()
+            self.state["last_fleet_status_publish_error"] = trim_message(str(exc), 1000)
+            self.save_state()
+
         return resp
+
 
     def update_action(
         self,

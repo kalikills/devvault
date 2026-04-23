@@ -76,6 +76,11 @@ installer/output/
 DevVault-Debug.spec
 .archiveignore
 .envrc
+_build/
+_vm_package/
+DevVault-VM-Package/
+DevVault-VM-*.zip
+*_VM_*.zip
 
 # DevVault lab workspace
 lab/
