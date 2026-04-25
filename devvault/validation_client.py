@@ -11,6 +11,10 @@ from devvault.validation_state import save_state
 
 VALIDATION_URL = "https://jk6pdb6dw5.execute-api.us-east-1.amazonaws.com/api/license/validate"
 APP_VERSION = "dev"
+INTERNAL_ERROR_MESSAGE = (
+    "License validation reached the server, but the validation service "
+    "reported an internal error. Please try again shortly."
+)
 
 
 @dataclass(frozen=True)
@@ -43,52 +47,15 @@ def build_validation_payload(*, app_version: str = APP_VERSION) -> dict:
     }
 
 
-def validate_now(*, url: str = VALIDATION_URL, app_version: str = APP_VERSION) -> ValidationResult:
-    payload = build_validation_payload(app_version=app_version)
-
-    body = json.dumps(payload).encode("utf-8")
-
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = resp.read().decode("utf-8")
-            data = json.loads(raw)
-    except urllib.error.HTTPError as e:
-        try:
-            raw = e.read().decode("utf-8")
-            data = json.loads(raw)
-            result = str(data.get("result", "http_error")).strip() or "http_error"
-            return ValidationResult(
-                ok=False,
-                result=result,
-                message=f"Validation failed: HTTP {e.code}",
-                payload=data,
-            )
-        except Exception:
-            return ValidationResult(
-                ok=False,
-                result="http_error",
-                message=f"Validation failed: HTTP {e.code}",
-                payload={},
-            )
-    except Exception as e:
-        return ValidationResult(
-            ok=False,
-            result="network_error",
-            message=f"Validation request failed: {e}",
-            payload={},
-        )
-
+def _interpret_validation_response(
+    *,
+    data: dict,
+    payload: dict,
+    now_utc,
+    http_status: int | None = None,
+) -> ValidationResult:
     result = str(data.get("result", "")).strip()
     action = str(data.get("action", "")).strip().lower()
-
-    now_utc = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
 
     if result in {"valid", "ok", "success"}:
         save_state(
@@ -120,11 +87,23 @@ def validate_now(*, url: str = VALIDATION_URL, app_version: str = APP_VERSION) -
             payload=data,
         )
 
-    if action == "accepted_with_internal_error":
+    if (
+        action == "accepted_with_internal_error"
+        or result in {"validation_service_internal_error", "internal_error"}
+        or (http_status is not None and http_status >= 500)
+    ):
         return ValidationResult(
             ok=False,
             result="validation_service_internal_error",
-            message="License validation reached the server, but the validation service reported an internal error. Please try again shortly.",
+            message=INTERNAL_ERROR_MESSAGE,
+            payload=data,
+        )
+
+    if http_status is not None:
+        return ValidationResult(
+            ok=False,
+            result=result or "http_error",
+            message=f"Validation failed: HTTP {http_status}",
             payload=data,
         )
 
@@ -133,4 +112,82 @@ def validate_now(*, url: str = VALIDATION_URL, app_version: str = APP_VERSION) -
         result=result or "invalid_response",
         message=f"License validation returned an unexpected response: result={result!r}, action={action!r}",
         payload=data,
+    )
+
+
+def validate_now(*, url: str = VALIDATION_URL, app_version: str = APP_VERSION) -> ValidationResult:
+    payload = build_validation_payload(app_version=app_version)
+    now_utc = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+
+    body = json.dumps(payload).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8")
+            data = json.loads(raw)
+    except urllib.error.HTTPError as e:
+        try:
+            raw = e.read().decode("utf-8")
+            data = json.loads(raw)
+        except Exception:
+            if e.code >= 500:
+                return ValidationResult(
+                    ok=False,
+                    result="validation_service_internal_error",
+                    message=INTERNAL_ERROR_MESSAGE,
+                    payload={},
+                )
+            return ValidationResult(
+                ok=False,
+                result="http_error",
+                message=f"Validation failed: HTTP {e.code}",
+                payload={},
+            )
+        if not isinstance(data, dict):
+            if e.code >= 500:
+                return ValidationResult(
+                    ok=False,
+                    result="validation_service_internal_error",
+                    message=INTERNAL_ERROR_MESSAGE,
+                    payload={},
+                )
+            return ValidationResult(
+                ok=False,
+                result="http_error",
+                message=f"Validation failed: HTTP {e.code}",
+                payload={},
+            )
+        return _interpret_validation_response(
+            data=data,
+            payload=payload,
+            now_utc=now_utc,
+            http_status=e.code,
+        )
+    except Exception as e:
+        return ValidationResult(
+            ok=False,
+            result="network_error",
+            message=f"Validation request failed: {e}",
+            payload={},
+        )
+
+    if not isinstance(data, dict):
+        return ValidationResult(
+            ok=False,
+            result="invalid_response",
+            message=f"License validation returned a non-object response: {type(data).__name__}",
+            payload={},
+        )
+
+    return _interpret_validation_response(
+        data=data,
+        payload=payload,
+        now_utc=now_utc,
     )

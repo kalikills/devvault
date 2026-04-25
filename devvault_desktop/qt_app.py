@@ -88,8 +88,8 @@ from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QFileDialog
 
 from PySide6.QtCore import Qt
-from PySide6.QtCore import QObject, Signal, QThread, QTimer
-from PySide6.QtGui import QFont, QPixmap, QGuiApplication, QIcon, QAction, QColor, QPainter, QCursor
+from PySide6.QtCore import QObject, QPoint, QRect, Signal, QThread, QTimer
+from PySide6.QtGui import QFont, QPixmap, QGuiApplication, QIcon, QAction, QColor, QPainter, QCursor, QPen
 from PySide6.QtWidgets import (
     QSizePolicy,
     QApplication,
@@ -108,8 +108,12 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QInputDialog,
     QComboBox,
+    QCheckBox,
     QListWidget,
     QListWidgetItem,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QSystemTrayIcon,
     QMenu,
     QPlainTextEdit,
@@ -164,6 +168,11 @@ from devvault_desktop.business_fetchers import (
     SeatProtectionStateFetcher,
     VaultHealthIntelligenceFetcher,
 )
+from devvault_desktop.setup_flow import (
+    allowed_setup_modes_for_license,
+    preferred_setup_mode_for_license,
+    should_run_startup_protection_check,
+)
 from devvault_desktop.business_fleet_status import (
     load_business_fleet_status_map,
     publish_business_fleet_status,
@@ -191,7 +200,14 @@ from devvault_desktop.business_seat_models import (
     normalize_business_seat_rows,
 )
 
-ASSET_DIR = Path(__file__).resolve().parent / "assets"
+def _runtime_base_dir() -> Path:
+    import sys
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return Path(meipass)
+    return Path(__file__).resolve().parent
+
+ASSET_DIR = _runtime_base_dir() / "assets"
 
 ASSET_WATERMARK = ASSET_DIR / "brand" / "trustware-shield-watermark.png"
 ASSET_BG_LOCKS = ASSET_DIR / "bg_locks_with_text.png"
@@ -425,6 +441,7 @@ class BackupConfirmDialog(QDialog):
         details_text: str,
         approve_text: str = "Run Backup",
         cancel_text: str = "Cancel",
+        queue_approve_text: str = "",
         min_width: int = 860,
         min_height: int = 520,
     ) -> None:
@@ -472,6 +489,14 @@ class BackupConfirmDialog(QDialog):
 
         root.addWidget(scroll, 1)
 
+        self._queue_approve_checkbox = None
+        if str(queue_approve_text or "").strip():
+            chk = ScanSelectionCheckBox(queue_approve_text, self)
+            chk.setChecked(False)
+            chk.setStyleSheet("background: transparent; color: #f5c400;")
+            root.addWidget(chk)
+            self._queue_approve_checkbox = chk
+
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
         btn_row.setSpacing(10)
@@ -500,6 +525,15 @@ class BackupConfirmDialog(QDialog):
         except Exception:
             pass
 
+    def queue_approve_selected(self) -> bool:
+        chk = getattr(self, "_queue_approve_checkbox", None)
+        if chk is None:
+            return False
+        try:
+            return bool(chk.isChecked())
+        except Exception:
+            return False
+
     @staticmethod
     def ask(
         parent: QWidget,
@@ -509,7 +543,8 @@ class BackupConfirmDialog(QDialog):
         details_text: str,
         approve_text: str = "Run Backup",
         cancel_text: str = "Cancel",
-    ) -> bool:
+        queue_approve_text: str = "",
+    ) -> tuple[bool, bool]:
         dlg = BackupConfirmDialog(
             parent,
             title=title,
@@ -517,8 +552,51 @@ class BackupConfirmDialog(QDialog):
             details_text=details_text,
             approve_text=approve_text,
             cancel_text=cancel_text,
+            queue_approve_text=queue_approve_text,
         )
-        return dlg.exec() == QDialog.DialogCode.Accepted
+        approved = dlg.exec() == QDialog.DialogCode.Accepted
+        return approved, (approved and dlg.queue_approve_selected())
+
+class ScanSelectionCheckBox(QCheckBox):
+    def __init__(self, text: str, parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self.setChecked(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumHeight(34)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+
+        indicator_size = 18
+        left_pad = 6
+        indicator_rect = QRect(
+            left_pad,
+            max(0, (self.height() - indicator_size) // 2),
+            indicator_size,
+            indicator_size,
+        )
+
+        hovered = bool(self.underMouse())
+        checked = bool(self.isChecked())
+        border_color = QColor("#f5c400" if checked or hovered else "#666666")
+        fill_color = QColor("#f5c400" if checked else "#0b0b0b")
+
+        painter.setPen(border_color)
+        painter.setBrush(fill_color)
+        painter.drawRect(indicator_rect)
+
+        if checked:
+            painter.setPen(QPen(QColor("#ff2b2b"), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            p1 = indicator_rect.topLeft() + QPoint(4, 10)
+            p2 = indicator_rect.topLeft() + QPoint(8, 14)
+            p3 = indicator_rect.topLeft() + QPoint(14, 5)
+            painter.drawLine(p1, p2)
+            painter.drawLine(p2, p3)
+
+        text_rect = QRect(indicator_rect.right() + 12, 0, max(0, self.width() - indicator_rect.right() - 12), self.height())
+        painter.setPen(QColor("#f5c400"))
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine, self.text())
 
 class ScanSelectionDialog(QDialog):
     """
@@ -558,6 +636,7 @@ Uncheck anything you do not want included, then choose Back Up Selected.""",
 
         self.list_widget = QListWidget(self)
         self.list_widget.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self._scan_path_checkboxes: list[tuple[str, ScanSelectionCheckBox]] = []
 
         from pathlib import Path
 
@@ -630,14 +709,14 @@ Uncheck anything you do not want included, then choose Back Up Selected.""",
             self.list_widget.addItem(header)
 
             for p in items:
-                item = QListWidgetItem("   " + decorate_path(str(p), title))
-                item.setData(Qt.ItemDataRole.UserRole, str(p))
-                item.setFlags(
-                    Qt.ItemFlag.ItemIsEnabled
-                    | Qt.ItemFlag.ItemIsUserCheckable
-                )
-                item.setCheckState(Qt.CheckState.Checked)
+                item = QListWidgetItem()
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                checkbox = ScanSelectionCheckBox(decorate_path(str(p), title), self.list_widget)
+                checkbox.setStyleSheet("background: transparent; color: #f5c400;")
+                self._scan_path_checkboxes.append((str(p), checkbox))
+                item.setSizeHint(checkbox.sizeHint())
                 self.list_widget.addItem(item)
+                self.list_widget.setItemWidget(item, checkbox)
 
         add_group("PROJECTS", projects)
         add_group("DATA FOLDERS", data)
@@ -664,15 +743,12 @@ Uncheck anything you do not want included, then choose Back Up Selected.""",
 
     def selected_paths(self) -> list[str]:
         chosen: list[str] = []
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            if item is None:
+        for raw_path, checkbox in list(getattr(self, "_scan_path_checkboxes", []) or []):
+            try:
+                if checkbox.isChecked():
+                    chosen.append(str(raw_path))
+            except Exception:
                 continue
-            if not (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
-                continue
-            if item.checkState() == Qt.CheckState.Checked:
-                raw = item.data(Qt.ItemDataRole.UserRole)
-                chosen.append(str(raw or item.text().strip()))
         return chosen
 
     @staticmethod
@@ -1835,7 +1911,6 @@ class BusinessHubDialog(QDialog):
         self.btn_seats = QPushButton("Seat Identity / Readiness")
         self.btn_seat_mgmt = QPushButton("Seat Management")
         self.btn_admin_mgmt = QPushButton("Admin Management")
-
         self.btn_invites = QPushButton("Invite Management")
         self.btn_nas_config = QPushButton("Business NAS Configuration")
         self.btn_fleet = QPushButton("Fleet Health Summary")
@@ -6757,6 +6832,7 @@ class DevVaultQt(QMainWindow):
         self._startup_popup_shown = False
         self._business_nas_startup_prompted = False
         self._business_admin_session: dict | None = None
+        self._approve_remaining_backup_queue = False
 
         raw_vault = self.settings.value("vault_path", "", type=str) or ""
         self.vault_path = self._normalize_vault_root(raw_vault)
@@ -7275,6 +7351,12 @@ class DevVaultQt(QMainWindow):
             return "", ""
 
     def _setup_required(self) -> bool:
+        try:
+            if get_setup_complete():
+                return False
+        except Exception:
+            pass
+
         if bool(getattr(self, "_force_setup_mode", False)):
             return True
 
@@ -7758,6 +7840,16 @@ class DevVaultQt(QMainWindow):
 
         self._position_setup_panel()
 
+    def _refresh_setup_mode_availability(self, *, state: str, plan: str) -> None:
+        allowed_modes = set(allowed_setup_modes_for_license(state=state, plan=plan))
+
+        for name, btn in getattr(self, "_setup_mode_buttons", {}).items():
+            try:
+                btn.setEnabled(name in allowed_modes)
+                btn.setVisible(name in allowed_modes)
+            except Exception:
+                pass
+
     def _setup_activate_seat(self) -> None:
         try:
             invite_email = str(self.txt_setup_invite_email.text() or "").strip()
@@ -7872,8 +7964,17 @@ class DevVaultQt(QMainWindow):
 
         try:
             current_mode = str(getattr(self, "_setup_mode", "core_pro") or "core_pro").strip().lower()
-            if plan == "business" and current_mode == "core_pro":
-                self._set_setup_mode("business_owner")
+            next_mode = preferred_setup_mode_for_license(
+                current_mode,
+                state=state,
+                plan=plan,
+            )
+            self._set_setup_mode(next_mode)
+        except Exception:
+            pass
+
+        try:
+            self._refresh_setup_mode_availability(state=state, plan=plan)
         except Exception:
             pass
 
@@ -7894,7 +7995,7 @@ class DevVaultQt(QMainWindow):
                     )
             else:
                 self.lbl_setup_status.setText(
-                    f"Current license state: {state}. {message}".strip()
+                    f"{plan.upper() if plan else 'CORE / PRO'} license detected. No Business setup is required. {message}".strip()
                 )
         except Exception:
             pass
@@ -8426,13 +8527,49 @@ class DevVaultQt(QMainWindow):
 
     def _setup_complete_placeholder(self) -> None:
         try:
-            # Ensure business license is valid
             state, plan = self._setup_license_context()
-            if state != "VALID" or plan != "business":
+
+            if state != "VALID":
                 _centered_message(
                     self,
                     "Setup Incomplete",
-                    "A valid Business license is required."
+                    "A valid DevVault license is required."
+                )
+                return
+
+            # Core and Pro do not require Business setup.
+            if plan in {"core", "pro"}:
+                try:
+                    set_setup_complete(True)
+                except Exception:
+                    pass
+                _centered_message(
+                    self,
+                    "Setup Complete",
+                    "DevVault setup is complete."
+                )
+                try:
+                    set_setup_complete(True)
+                except Exception:
+                    pass
+
+                try:
+                    from devvault_desktop.business_runtime_config import load_runtime, save_runtime
+                    data = load_runtime() or {}
+                    data["mode"] = "active"
+                    save_runtime(data)
+                except Exception as e:
+                    self.append_log(f"Setup runtime activation failed: {e}")
+
+                self._hide_setup_panel()
+                return
+
+            # Business setup requires a valid Business license.
+            if plan != "business":
+                _centered_message(
+                    self,
+                    "Setup Incomplete",
+                    "A valid DevVault license is required."
                 )
                 return
 
@@ -8811,6 +8948,20 @@ class DevVaultQt(QMainWindow):
         self._startup_scan_thread = None
 
     def _run_startup_protection_check(self) -> None:
+        try:
+            if not should_run_startup_protection_check(setup_required=self._setup_required()):
+                self._update_protection_status(0)
+                self.protection_status_message.setText(
+                    "Complete license setup to start protection checks."
+                )
+                self._set_tray_state("checking")
+                self.append_log(
+                    "Startup protection check skipped until license setup is complete."
+                )
+                return
+        except Exception:
+            pass
+
         if getattr(self, "_startup_scan_thread", None) is not None:
             return
 
@@ -9743,6 +9894,7 @@ class DevVaultQt(QMainWindow):
             self.append_log("Queued backup run complete.")
             self._backup_queue = []
             self._backup_queue_total = 0
+            self._approve_remaining_backup_queue = False
     def _on_backup_exec_err(self, payload: object) -> None:
         if isinstance(payload, dict):
             code = str(payload.get("code") or "").strip().upper()
@@ -9767,6 +9919,7 @@ class DevVaultQt(QMainWindow):
                 except Exception:
                     pass
         self._set_busy(False)
+        self._approve_remaining_backup_queue = False
         try:
             self._op_stop(allow_close=True)
             ov = getattr(self, "op_overlay", None)
@@ -10230,9 +10383,11 @@ class DevVaultQt(QMainWindow):
         try:
             self._backup_queue = list(approved_paths)
             self._backup_queue_total = len(self._backup_queue)
+            self._approve_remaining_backup_queue = False
         except Exception:
             self._backup_queue = []
             self._backup_queue_total = 0
+            self._approve_remaining_backup_queue = False
 
         if not self._start_next_queued_backup():
             self.append_log("No queued backup sources were available.")
@@ -12138,7 +12293,58 @@ class DevVaultQt(QMainWindow):
 
         # CRITICAL: schedule dialog on UI thread
         def _ask_confirm() -> None:
-            if not BackupConfirmDialog.ask(
+            if bool(getattr(self, "_approve_remaining_backup_queue", False)):
+                source_dir = getattr(self, "_pending_backup_source", None)
+                vault_dir = getattr(self, "_pending_backup_vault", None)
+                if source_dir is None or vault_dir is None:
+                    self.append_log("Backup refused: internal error (missing pending paths).")
+                    self._set_busy(False)
+                    self._approve_remaining_backup_queue = False
+                    return
+
+                self.append_log("Queued backup confirmation skipped for remaining approved items.")
+
+                self._backup_exec_thread = QThread()
+                self._backup_exec = _BackupExecuteWorker(source_dir, vault_dir)
+                self._backup_exec.moveToThread(self._backup_exec_thread)
+
+                self._backup_exec_thread.started.connect(self._backup_exec.run)
+                self._backup_exec.log.connect(self.append_log)
+                self._backup_exec.done.connect(self._on_backup_exec_done, type=Qt.QueuedConnection)
+                self._backup_exec.error.connect(self._on_backup_exec_err, type=Qt.QueuedConnection)
+                self._backup_exec_thread.finished.connect(self._backup_exec.deleteLater)
+                self._backup_exec_thread.finished.connect(self._backup_exec_thread.deleteLater)
+                self._backup_exec_thread.finished.connect(self._cleanup_backup_execute_thread, type=Qt.QueuedConnection)
+                try:
+                    _v = Path(str(vault_dir)).expanduser().resolve()
+                    self._exec_vault_before = {p.name for p in _v.iterdir() if p.is_dir()}
+                except Exception:
+                    self._exec_vault_before = set()
+
+                self._backup_exec_thread.start()
+                try:
+                    self._op_bind_cancel_execute()
+                    self._op_show(
+                        title="Backup in progress",
+                        phase="Preflight → Confirm → Execute",
+                        lines=[
+                            f"Source: {source_dir}",
+                            f"Vault: {vault_dir}",
+                        ],
+                        allow_cancel=True,
+                    )
+                except Exception:
+                    pass
+                return
+
+            remaining_in_queue = len(list(getattr(self, "_backup_queue", []) or []))
+            queue_approve_text = ""
+            if remaining_in_queue > 0:
+                queue_approve_text = (
+                    f"Approve the remaining {remaining_in_queue} queued backup(s) without asking again"
+                )
+
+            approved, approve_remaining_queue = BackupConfirmDialog.ask(
 
                 self,
 
@@ -12158,9 +12364,14 @@ class DevVaultQt(QMainWindow):
 
                 cancel_text="Cancel",
 
-            ):
+                queue_approve_text=queue_approve_text,
+
+            )
+
+            if not approved:
 
                 self.append_log("Backup canceled (operator declined preflight confirmation).")
+                self._approve_remaining_backup_queue = False
 
                 try:
                     self._op_stop(allow_close=True)
@@ -12173,6 +12384,7 @@ class DevVaultQt(QMainWindow):
                 self._set_busy(False)
 
                 return
+            self._approve_remaining_backup_queue = bool(approve_remaining_queue)
 # ---------- Phase 2: Execute ----------
             source_dir = getattr(self, "_pending_backup_source", None)
             vault_dir = getattr(self, "_pending_backup_vault", None)
@@ -12263,11 +12475,18 @@ class DevVaultQt(QMainWindow):
             from scanner.snapshot_listing import snapshot_storage_root
             from devvault_desktop.business_vault_authority import validate_business_vault_authority
 
-            authority = validate_business_vault_authority(vault_dir, mode="restore")
-            if not authority.ok:
-                _centered_message(self, "Restore Refused", authority.operator_message)
-                self.append_log(f"Restore refused: {authority.state.value}: {authority.operator_message}")
-                return
+            try:
+                state, plan = self._setup_license_context()
+            except Exception:
+                state, plan = ("", "")
+
+            # Only enforce Business NAS authority for Business licenses
+            if plan == "business":
+                authority = validate_business_vault_authority(vault_dir, mode="restore")
+                if not authority.ok:
+                    _centered_message(self, "Restore Refused", authority.operator_message)
+                    self.append_log(f"Restore refused: {authority.state.value}: {authority.operator_message}")
+                    return
 
             fs = OSFileSystem()
             
